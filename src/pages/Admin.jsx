@@ -1,0 +1,1484 @@
+import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { MapContainer, TileLayer, Circle, useMapEvents, useMap, Popup } from 'react-leaflet'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+import AdminIcon from '../components/icons/AdminIcon.jsx'
+import DashboardIcon from '../components/icons/DashboardIcon.jsx'
+import HistoryIcon from '../components/icons/HistoryIcon.jsx'
+import BellIcon from '../components/icons/BellIcon.jsx'
+import ShieldIcon from '../components/icons/ShieldIcon.jsx'
+import { API_ENDPOINTS, API_BASE_URL } from '../config/api.js'
+import { MAP_CONFIG } from '../config/maps.js'
+import './Admin.css'
+
+export default function Admin({ onLogout }) {
+  // Component for handling map clicks
+  function MapClickHandler() {
+    useMapEvents({
+      click: (e) => {
+        if (mapMode === 'create') {
+          const { lat, lng } = e.latlng
+          setSelectedCoords({ lat, lng })
+          setShowCreateForm(true)
+          console.log('Red zone location selected:', { lat, lng })
+        }
+      }
+    })
+    return null
+  }
+
+  // Component for centering map on coordinates
+  function MapCenterUpdater({ center }) {
+    const map = useMap()
+    
+    useEffect(() => {
+      if (center) {
+        map.setView([center.lat, center.lng], 15)
+      }
+    }, [center, map])
+    
+    return null
+  }
+  const [activeTab, setActiveTab] = useState('dashboard')
+  const [historyFilter, setHistoryFilter] = useState('all')
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const navRef = useRef(null)
+  
+  // State declarations
+  const [stats, setStats] = useState([
+    { title: 'Total Users', value: 'Loading...', change: '0%', color: 'blue' },
+    { title: 'Active Users', value: 'Loading...', change: '0%', color: 'green' },
+    { title: 'Admin Users', value: 'Loading...', change: '0%', color: 'red' },
+    { title: 'Recent Users (7d)', value: 'Loading...', change: '0%', color: 'purple' }
+  ])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [redZones, setRedZones] = useState([])
+  const [loadingRedZones, setLoadingRedZones] = useState(false)
+  const [userContacts, setUserContacts] = useState([])
+  const [loadingContacts, setLoadingContacts] = useState(false)
+  const [pendingRemovals, setPendingRemovals] = useState([])
+  const [loadingPendingRemovals, setLoadingPendingRemovals] = useState(false)
+  const [hasNotifications, setHasNotifications] = useState(false)
+  const [showNotificationDropdown, setShowNotificationDropdown] = useState(false)
+  const notificationRef = useRef(null)
+  const [newRedZone, setNewRedZone] = useState({
+    title: '',
+    description: '',
+    location: '',
+    severity: 'medium'
+  })
+  
+  // Map-based red zone creation state
+  const [mapRedZone, setMapRedZone] = useState({
+    title: '',
+    description: '',
+    severity: 'medium',
+    coordinates: null
+  })
+  const [mapMode, setMapMode] = useState('view') // 'view' or 'create'
+  const [selectedCoords, setSelectedCoords] = useState(null)
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const navigate = useNavigate()
+  
+  // Close mobile menu when clicking outside
+  const handleOverlayClick = () => {
+    setMobileMenuOpen(false)
+  }
+  
+  // Handle hamburger menu toggle with animation
+  const toggleMobileMenu = () => {
+    setMobileMenuOpen(!mobileMenuOpen)
+  }
+  
+  // Close menu when window is resized to desktop size
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth > 768 && mobileMenuOpen) {
+        setMobileMenuOpen(false)
+      }
+    }
+    
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [mobileMenuOpen])
+  
+  // Close notification dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
+        setShowNotificationDropdown(false)
+      }
+    }
+    
+    if (showNotificationDropdown) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showNotificationDropdown])
+  
+  // Fetch pending contact removal requests
+  const fetchPendingRemovals = async () => {
+    try {
+      setLoadingPendingRemovals(true)
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        setError('No authentication token found')
+        return
+      }
+
+      const response = await fetch(API_ENDPOINTS.ADMIN_PENDING_CONTACT_REMOVALS, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorBody}`)
+      }
+
+      const data = await response.json()
+      setPendingRemovals(data.pendingRequests || [])
+      setHasNotifications(data.pendingRequests && data.pendingRequests.length > 0)
+      setError(null)
+    } catch (err) {
+      console.error('Error fetching pending removals:', err.message || err)
+      setError(`Failed to load pending removals: ${err.message || 'Unknown error'}`)
+    } finally {
+      setLoadingPendingRemovals(false)
+    }
+  }
+  
+  // Handle approval of contact removal
+  const handleApproveRemoval = async (contactId) => {
+    try {
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        setError('No authentication token found')
+        return
+      }
+
+      const response = await fetch(`${API_ENDPOINTS.ADMIN_USER_CONTACTS}/${contactId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorBody}`)
+      }
+      
+      // Remove from pending removals and refresh lists
+      setPendingRemovals(pendingRemovals.filter(contact => contact._id !== contactId))
+      setUserContacts(userContacts.filter(contact => contact._id !== contactId))
+      
+      // Update notification status
+      const remainingPending = pendingRemovals.filter(contact => contact._id !== contactId)
+      setHasNotifications(remainingPending.length > 0)
+      
+      alert('Contact removal approved successfully. User will no longer receive SMS notifications.')
+    } catch (err) {
+      console.error('Error approving contact removal:', err.message || err)
+      alert('An error occurred while approving the contact removal')
+    }
+  }
+  
+  // Handle rejection of contact removal
+  const handleRejectRemoval = async (contactId) => {
+    try {
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        setError('No authentication token found')
+        return
+      }
+
+      const response = await fetch(API_ENDPOINTS.ADMIN_REJECT_CONTACT_REMOVAL(contactId), {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorBody}`)
+      }
+      
+      // Remove from pending removals list
+      setPendingRemovals(pendingRemovals.filter(contact => contact._id !== contactId))
+      
+      // Update notification status
+      const remainingPending = pendingRemovals.filter(contact => contact._id !== contactId)
+      setHasNotifications(remainingPending.length > 0)
+      
+      alert('Contact removal request rejected successfully.')
+    } catch (err) {
+      console.error('Error rejecting contact removal:', err.message || err)
+      alert('An error occurred while rejecting the contact removal')
+    }
+  }
+  
+  // Fetch user contacts for admin
+  const fetchUserContacts = async () => {
+    try {
+      setLoadingContacts(true)
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        setError('No authentication token found')
+        return
+      }
+
+      const response = await fetch(API_ENDPOINTS.ADMIN_USER_CONTACTS, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorBody}`)
+      }
+
+      const data = await response.json()
+      setUserContacts(data.contacts || [])
+      setError(null)
+    } catch (err) {
+      console.error('Error fetching user contacts:', err.message || err)
+      setError(`Failed to load user contacts: ${err.message || 'Unknown error'}`)
+    } finally {
+      setLoadingContacts(false)
+    }
+  }
+  
+  // Handle contact deletion
+  const handleDeleteContact = async (contactId) => {
+    if (!confirm('Are you sure you want to delete this contact?')) {
+      return
+    }
+    
+    try {
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        setError('No authentication token found')
+        return
+      }
+
+      const response = await fetch(`${API_ENDPOINTS.ADMIN_USER_CONTACTS}/${contactId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorBody}`)
+      }
+      
+      // Remove the deleted contact from state
+      setUserContacts(userContacts.filter(contact => contact._id !== contactId))
+      alert('Contact deleted successfully')
+    } catch (err) {
+      console.error('Error deleting contact:', err.message || err)
+      alert('An error occurred while deleting the contact')
+    }
+  }
+
+  const handleLogout = () => {
+    onLogout()
+    navigate('/')
+  }
+
+  // Fetch admin statistics from API
+  const fetchStats = async () => {
+    try {
+      setLoading(true)
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        setError('No authentication token found')
+        return
+      }
+
+      const response = await fetch(API_ENDPOINTS.ADMIN_STATS, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorBody}`)
+      }
+
+      const data = await response.json()
+      
+      // Update stats with real data from database
+      setStats([
+        { title: 'Total Users', value: data.stats.totalUsers.toString(), change: 'Live', color: 'blue' },
+        { title: 'Active Users', value: data.stats.activeUsers.toString(), change: 'Live', color: 'green' },
+        { title: 'Admin Users', value: data.stats.adminUsers.toString(), change: 'Live', color: 'red' },
+        { title: 'Recent Users (7d)', value: data.stats.recentUsers.toString(), change: 'Live', color: 'purple' }
+      ])
+      
+      setError(null)
+    } catch (err) {
+      console.error('Error fetching stats:', err.message || err)
+      setError(`Failed to load statistics: ${err.message || 'Unknown error'}`)
+      // Set fallback values
+      setStats([
+        { title: 'Total Users', value: 'Error', change: '0%', color: 'blue' },
+        { title: 'Active Users', value: 'Error', change: '0%', color: 'green' },
+        { title: 'Admin Users', value: 'Error', change: '0%', color: 'red' },
+        { title: 'Recent Users (7d)', value: 'Error', change: '0%', color: 'purple' }
+      ])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Fetch all RedZones for admin
+  const fetchRedZones = async () => {
+    try {
+      setLoadingRedZones(true)
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        setError('No authentication token found')
+        return
+      }
+
+      const response = await fetch(API_ENDPOINTS.REDZONES_ALL, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorBody}`)
+      }
+
+      const data = await response.json()
+      console.log('Admin fetchRedZones API response:', data)
+      setRedZones(data.redZones)
+      setError(null)
+    } catch (err) {
+      console.error('Error fetching RedZones:', err.message || err)
+      setError(`Failed to load RedZones: ${err.message || 'Unknown error'}`)
+    } finally {
+      setLoadingRedZones(false)
+    }
+  }
+
+  // Handle RedZone approval
+  const handleApproveRedZone = async (id) => {
+    try {
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        setError('No authentication token found')
+        return
+      }
+
+      const response = await fetch(API_ENDPOINTS.REDZONES_APPROVE(id), {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorBody}`)
+      }
+      
+      // Fetch all RedZones again to update the state
+      fetchRedZones()
+
+      // Show success message
+      alert('RedZone approved successfully. SMS notifications will be sent to all registered users with valid phone numbers.')
+    } catch (err) {
+      console.error('Error approving RedZone:', err.message || err)
+      setError(`Failed to approve RedZone: ${err.message || 'Unknown error'}`)
+    }
+  }
+
+  // Handle RedZone rejection
+  const handleRejectRedZone = async (id) => {
+    try {
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        setError('No authentication token found')
+        return
+      }
+
+      const response = await fetch(API_ENDPOINTS.REDZONES_REJECT(id), {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorBody}`)
+      }
+      
+      // Fetch all RedZones again to update the state
+      fetchRedZones()
+
+      // Show success message
+      alert('RedZone rejected successfully')
+    } catch (err) {
+      console.error('Error rejecting RedZone:', err.message || err)
+      setError(`Failed to reject RedZone: ${err.message || 'Unknown error'}`)
+    }
+  }
+  
+  // Handle marking a RedZone as safe
+  const handleMarkSafe = async (id) => {
+    if (!confirm('Are you sure you want to mark this RedZone as safe? This will send SMS notifications to all users.')) {
+      return
+    }
+    
+    try {
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        setError('No authentication token found')
+        return
+      }
+
+      const response = await fetch(API_ENDPOINTS.REDZONES_SAFE_NOW(id), {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorBody}`)
+      }
+      
+      // Fetch all RedZones again to update the state
+      fetchRedZones()
+
+      // Show success message
+      alert('RedZone marked as safe successfully. SMS notifications will be sent to all registered users with valid phone numbers.')
+    } catch (err) {
+      console.error('Error marking RedZone as safe:', err.message || err)
+      setError(`Failed to mark RedZone as safe: ${err.message || 'Unknown error'}`)
+    }
+  }
+
+  // Handle new RedZone submission
+  const handleSubmitRedZone = async (e) => {
+    e.preventDefault()
+    try {
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        setError('No authentication token found')
+        return
+      }
+
+      // Add status as approved since it's created by admin
+      const redZoneData = {
+        ...newRedZone,
+        status: 'approved'
+      }
+
+      const response = await fetch(API_ENDPOINTS.REDZONES_CREATE, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(redZoneData)
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorBody}`)
+      }
+
+      await response.json()
+
+      // Reset form
+      setNewRedZone({
+        title: '',
+        description: '',
+        location: '',
+        severity: 'medium'
+      })
+
+      // Add the new RedZone to the list with approved status
+      setRedZones(prevRedZones => [
+        {
+          ...newRedZone,
+          status: 'approved'
+        },
+        ...prevRedZones
+      ])
+
+      // Show success message
+      alert('New RedZone created successfully')
+    } catch (err) {
+      console.error('Error creating RedZone:', err.message || err)
+      setError(`Failed to create RedZone: ${err.message || 'Unknown error'}`)
+    }
+  }
+
+  // Handle map-based red zone creation
+  const handleCreateMapRedZone = async (e) => {
+    e.preventDefault()
+    if (!selectedCoords) {
+      alert('Please select a location on the map first')
+      return
+    }
+
+    try {
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        setError('No authentication token found')
+        return
+      }
+
+      const redZoneData = {
+        title: mapRedZone.title,
+        description: mapRedZone.description,
+        location: `${selectedCoords.lat.toFixed(6)}, ${selectedCoords.lng.toFixed(6)}`,
+        severity: mapRedZone.severity,
+        coordinates: {
+          lat: selectedCoords.lat,
+          lng: selectedCoords.lng
+        },
+        status: 'approved' // Admin-created zones are auto-approved
+      }
+
+      console.log('Creating red zone with data:', redZoneData)
+
+      const response = await fetch(API_ENDPOINTS.REDZONES_CREATE, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(redZoneData)
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorBody}`)
+      }
+
+      const newZone = await response.json()
+
+      // Reset forms and state
+      setMapRedZone({
+        title: '',
+        description: '',
+        severity: 'medium',
+        coordinates: null
+      })
+      setSelectedCoords(null)
+      setShowCreateForm(false)
+      setMapMode('view')
+
+      // Refresh the red zones list to show the new zone immediately
+      await fetchRedZones()
+
+      // Also add the new zone to current state for immediate visibility
+      const newZoneForState = {
+        _id: newZone.redZone._id,
+        title: newZone.redZone.title,
+        description: newZone.redZone.description,
+        location: newZone.redZone.location,
+        severity: newZone.redZone.severity,
+        status: newZone.redZone.status,
+        coordinates: newZone.redZone.coordinates,
+        createdAt: newZone.redZone.createdAt,
+        reportedBy: newZone.redZone.reportedBy
+      }
+      
+      // Add to current state for immediate display
+      setRedZones(prevRedZones => [newZoneForState, ...prevRedZones])
+
+      alert('Red Zone created successfully and is now visible to all users!')
+      console.log('New red zone created with coordinates:', newZone.redZone.coordinates)
+    } catch (err) {
+      console.error('Error creating map-based RedZone:', err.message || err)
+      setError(`Failed to create RedZone: ${err.message || 'Unknown error'}`)
+    }
+  }
+
+  // Get circle color based on severity
+  const getCircleColor = (severity) => {
+    switch (severity) {
+      case 'high': return '#EF4444'
+      case 'medium': return '#F59E0B'
+      case 'low': return '#10B981'
+      default: return '#6B7280'
+    }
+  }
+
+  useEffect(() => {
+    fetchStats()
+    fetchRedZones()
+    fetchUserContacts()
+    fetchPendingRemovals()
+  }, [])
+
+  const recentActivity = [
+    { action: 'New user registered', time: '2 minutes ago', type: 'user' },
+    { action: 'Alert triggered in Zone A', time: '5 minutes ago', type: 'alert' },
+    { action: 'System backup completed', time: '1 hour ago', type: 'system' },
+    { action: 'Admin login from IP 192.168.1.100', time: '2 hours ago', type: 'security' }
+  ]
+
+  return (
+    <div className="admin-container">
+      {/* Mobile Menu Overlay */}
+      {mobileMenuOpen && <div className="mobile-overlay" onClick={handleOverlayClick}></div>}
+      
+      {/* Mobile Hamburger Menu */}
+      <div className="mobile-header">
+        <div className={`hamburger-menu ${mobileMenuOpen ? 'active' : ''}`} onClick={toggleMobileMenu}>
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <h1>Admin Dashboard</h1>
+        <div className="mobile-actions">
+          <button className="mobile-refresh" onClick={fetchStats} disabled={loading}>
+            <span>🔄</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Admin Header */}
+      <header className={`admin-header ${mobileMenuOpen ? 'hidden-mobile' : ''}`}>
+        <div className="admin-header-left">
+          <AdminIcon />
+          <h1>Admin Dashboard</h1>
+        </div>
+        <div className="admin-header-right">
+          <button 
+            className="btn btn-secondary" 
+            onClick={fetchStats}
+            disabled={loading}
+            style={{ opacity: loading ? 0.6 : 1 }}
+          >
+            <span style={{ fontSize: '14px' }}>🔄</span>
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
+          <div className="notification-bell" style={{ position: 'relative' }} ref={notificationRef}>
+            <button 
+              className="btn btn-secondary" 
+              onClick={() => setShowNotificationDropdown(!showNotificationDropdown)}
+            >
+              <BellIcon />
+              {hasNotifications && <span className="notification-dot"></span>}
+            </button>
+            
+            {showNotificationDropdown && (
+              <div 
+                className="notification-dropdown"
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: '0',
+                  background: 'rgba(0, 0, 0, 0.9)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  padding: '20px',
+                  minWidth: '400px',
+                  maxWidth: '500px',
+                  zIndex: 1000,
+                  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
+                  marginTop: '10px'
+                }}
+              >
+                <h3 style={{ margin: '0 0 15px 0', color: 'white', fontSize: '1.1rem' }}>Pending Contact Removal Requests</h3>
+                
+                {loadingPendingRemovals ? (
+                  <p style={{ color: 'rgba(255, 255, 255, 0.7)', margin: 0 }}>Loading pending requests...</p>
+                ) : pendingRemovals.length > 0 ? (
+                  <>
+                    <div className="notification-summary" style={{ marginBottom: '15px' }}>
+                      <p className="notification-count" style={{ color: '#3498db', margin: 0, fontWeight: '600' }}>
+                        {pendingRemovals.length} pending removal request{pendingRemovals.length !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                    
+                    <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                      {pendingRemovals.map((contact) => (
+                        <div 
+                          key={contact._id} 
+                          style={{
+                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                            borderLeft: '4px solid #e74c3c',
+                            borderRadius: '4px',
+                            padding: '12px',
+                            marginBottom: '10px',
+                            color: 'white'
+                          }}
+                        >
+                          <div style={{ marginBottom: '8px' }}>
+                            <strong>{contact.name}</strong> ({contact.email})
+                          </div>
+                          <div style={{ fontSize: '0.9rem', color: 'rgba(255, 255, 255, 0.8)', marginBottom: '10px' }}>
+                            Phone: {contact.phone} | Requested: {new Date(contact.updatedAt).toLocaleDateString()}
+                          </div>
+                          <div className="action-buttons" style={{ display: 'flex', gap: '8px' }}>
+                            <button 
+                              onClick={() => {
+                                handleApproveRemoval(contact._id)
+                                setShowNotificationDropdown(false)
+                              }}
+                              className="btn btn-success"
+                              style={{ fontSize: '0.8rem', padding: '4px 8px' }}
+                              title="Approve Removal"
+                            >
+                              ✅ Accept
+                            </button>
+                            <button 
+                              onClick={() => {
+                                handleRejectRemoval(contact._id)
+                                setShowNotificationDropdown(false)
+                              }}
+                              className="btn btn-danger"
+                              style={{ fontSize: '0.8rem', padding: '4px 8px' }}
+                              title="Reject Removal"
+                            >
+                              ❌ Reject
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    <button 
+                      onClick={fetchPendingRemovals}
+                      className="btn btn-secondary"
+                      disabled={loadingPendingRemovals}
+                      style={{ 
+                        marginTop: '15px', 
+                        width: '100%',
+                        fontSize: '0.9rem',
+                        padding: '8px'
+                      }}
+                    >
+                      {loadingPendingRemovals ? 'Refreshing...' : '🔄 Refresh Requests'}
+                    </button>
+                  </>
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '20px', color: 'rgba(255, 255, 255, 0.7)' }}>
+                    <div style={{ marginBottom: '10px', fontSize: '2rem', opacity: 0.5 }}>
+                      <BellIcon />
+                    </div>
+                    <h4 style={{ margin: '0 0 8px 0', color: 'rgba(255, 255, 255, 0.8)' }}>No Pending Requests</h4>
+                    <p style={{ margin: 0, fontSize: '0.9rem' }}>There are no pending contact removal requests at this time.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <button className="btn btn-primary">Settings</button>
+          <button onClick={handleLogout} className="btn btn-ghost">Logout</button>
+        </div>
+      </header>
+
+      {/* Admin Navigation */}
+      <nav ref={navRef} className={`admin-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}>
+        <div className="mobile-nav-header">
+          <h2>Menu</h2>
+          <button className="close-mobile-menu" onClick={() => setMobileMenuOpen(false)}>×</button>
+        </div>
+        <button 
+          className={`admin-nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
+          onClick={() => {
+            setActiveTab('dashboard')
+            setMobileMenuOpen(false)
+          }}
+        >
+          <DashboardIcon />
+          <span>Dashboard</span>
+        </button>
+        <button 
+          className={`admin-nav-item ${activeTab === 'users' ? 'active' : ''}`}
+          onClick={() => {
+            setActiveTab('users')
+            setMobileMenuOpen(false)
+          }}
+        >
+          <AdminIcon />
+          <span>Manage RedZones</span>
+        </button>
+        <button 
+          className={`admin-nav-item ${activeTab === 'map-create' ? 'active' : ''}`}
+          onClick={() => {
+            setActiveTab('map-create')
+            setMobileMenuOpen(false)
+          }}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" aria-hidden="true">
+            <defs>
+              <style>
+                {`.s { fill: none; stroke: currentColor; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }`}
+                {`.pin-fill { fill: #ffffff; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }`}
+              </style>
+            </defs>
+            <path className="s" d="M6 18 L6 46 L22 54 L22 26 Z"/>
+            <path className="s" d="M22 26 L22 54 L38 48 L38 20 Z"/>
+            <path className="s" d="M22 26 L38 20"/>
+            <path className="s" d="M38 20 L58 14 L58 42 L38 48 Z"/>
+            <path className="s" d="M22 54 L30 50"/>
+            <path className="s" d="M48 36 C48 30.5 44.418 26 40 26 C35.582 26 32 30.5 32 36 C32 42 40 52 40 52 C40 52 48 42 48 36 Z"/>
+            <circle className="pin-fill" cx="40" cy="36" r="4"/>
+            <circle cx="40" cy="36" r="1.6" fill="currentColor"/>
+          </svg>
+          <span>Create RedZone</span>
+        </button>
+        <button 
+          className={`admin-nav-item ${activeTab === 'history' ? 'active' : ''}`}
+          onClick={() => {
+            setActiveTab('history')
+            setMobileMenuOpen(false)
+          }}
+        >
+          <HistoryIcon />
+          <span>History</span>
+        </button>
+        <button 
+          className={`admin-nav-item ${activeTab === 'security' ? 'active' : ''}`}
+          onClick={() => {
+            setActiveTab('security')
+            setMobileMenuOpen(false)
+          }}
+        >
+          <ShieldIcon />
+          <span>Users</span>
+        </button>
+      </nav>
+
+      {/* Main Content */}
+      <main className="admin-main">
+        {activeTab === 'dashboard' && (
+          <div className="dashboard-content">
+            {/* Stats Cards */}
+            {error && (
+              <div className="error-message" style={{ 
+                background: '#fee', 
+                color: '#c33', 
+                padding: '1rem', 
+                borderRadius: '8px', 
+                marginBottom: '1rem',
+                border: '1px solid #fcc'
+              }}>
+                ⚠️ {error}
+              </div>
+            )}
+            
+            <div className="stats-grid">
+              {stats.map((stat, index) => (
+                <div key={index} className={`stat-card stat-${stat.color}`}>
+                  <div className="stat-header">
+                    <h3>{stat.title}</h3>
+                    <span className={`stat-change ${stat.change === 'Live' ? 'positive' : stat.change.startsWith('+') ? 'positive' : 'negative'}`}>
+                      {loading ? 'Loading...' : stat.change}
+                    </span>
+                  </div>
+                  <div className="stat-value">
+                    {loading ? (
+                      <div>Loading...</div>
+                    ) : (
+                      stat.value
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Recent Activity */}
+            <div className="activity-section">
+              <h2>Recent Activity</h2>
+              <div className="activity-list">
+                {recentActivity.map((activity, index) => (
+                  <div key={index} className={`activity-item activity-${activity.type}`}>
+                    <div className="activity-icon">
+                      {activity.type === 'user' && <AdminIcon />}
+                      {activity.type === 'alert' && <BellIcon />}
+                      {activity.type === 'system' && <DashboardIcon />}
+                      {activity.type === 'security' && <ShieldIcon />}
+                    </div>
+                    <div className="activity-content">
+                      <p className="activity-action">{activity.action}</p>
+                      <p className="activity-time">{activity.time}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'history' && (
+          <div className="history-content">
+            <h2>RedZone Review History</h2>
+            <div className="history-filters">
+              <button 
+                className={`btn ${historyFilter === 'all' ? 'btn-secondary' : 'btn-ghost'}`}
+                onClick={() => setHistoryFilter('all')}
+              >
+                All
+              </button>
+              <button 
+                className={`btn ${historyFilter === 'approved' ? 'btn-secondary' : 'btn-ghost'}`}
+                onClick={() => setHistoryFilter('approved')}
+              >
+                Approved
+              </button>
+              <button 
+                className={`btn ${historyFilter === 'rejected' ? 'btn-secondary' : 'btn-ghost'}`}
+                onClick={() => setHistoryFilter('rejected')}
+              >
+                Rejected
+              </button>
+              <button 
+                className={`btn ${historyFilter === 'safe' ? 'btn-secondary' : 'btn-ghost'}`}
+                onClick={() => setHistoryFilter('safe')}
+              >
+                Safe
+              </button>
+            </div>
+            
+            <div className="history-list">
+              {loadingRedZones ? (
+                <p>Loading history...</p>
+              ) : (
+                <table className="history-table">
+                  <thead>
+                    <tr>
+                      <th>Title</th>
+                      <th>Location</th>
+                      <th>Level</th>
+                      <th>Status</th>
+                      <th>Reviewed At</th>
+                      {historyFilter === 'all' && <th>Actions</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {redZones
+                      .filter(zone => {
+                        if (historyFilter === 'all') return zone.status === 'approved' || zone.status === 'rejected' || zone.status === 'safe';
+                        if (historyFilter === 'approved') return zone.status === 'approved';
+                        if (historyFilter === 'rejected') return zone.status === 'rejected';
+                        if (historyFilter === 'safe') return zone.status === 'safe';
+                        return false;
+                      })
+                      .map((zone) => (
+                        <tr key={zone._id} className={`severity-${zone.severity}`}>
+                          <td>{zone.title}</td>
+                          <td>{zone.location}</td>
+                          <td>
+                            <span className={`severity-badge ${zone.severity}`}>
+                              {zone.severity.charAt(0).toUpperCase() + zone.severity.slice(1)}
+                            </span>
+                          </td>
+                          <td>
+                            <span className={`status-badge ${zone.status}`}>
+                              {zone.status.charAt(0).toUpperCase() + zone.status.slice(1)}
+                            </span>
+                          </td>
+                          <td>{new Date(zone.reviewedAt || zone.updatedAt).toLocaleString()}</td>
+                          <td>
+                            {historyFilter === 'all' && zone.status === 'approved' && (
+                              <button 
+                                className="btn btn-success btn-sm"
+                                onClick={() => handleMarkSafe(zone._id)}
+                              >
+                                Safe Now
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              )}
+              
+              {!loadingRedZones && redZones.filter(zone => {
+                if (historyFilter === 'all') return zone.status === 'approved' || zone.status === 'rejected' || zone.status === 'safe';
+                if (historyFilter === 'approved') return zone.status === 'approved';
+                if (historyFilter === 'rejected') return zone.status === 'rejected';
+                if (historyFilter === 'safe') return zone.status === 'safe';
+                return false;
+              }).length === 0 && (
+                <div className="empty-state">
+                  <p>No {historyFilter === 'safe' ? 'safe zones' : 'review history'} found.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'security' && (
+          <div className="security-content">
+            <h2>User Contacts</h2>
+            <div className="user-contacts-section">
+              {loadingContacts ? (
+                <p>Loading contacts...</p>
+              ) : userContacts.length > 0 ? (
+                <table className="contacts-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Email</th>
+                      <th>Phone</th>
+                      <th>Date Added</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {userContacts.map((contact) => (
+                      <tr key={contact._id}>
+                        <td>{contact.name}</td>
+                        <td>{contact.email}</td>
+                        <td>{contact.phone}</td>
+                        <td>{new Date(contact.createdAt).toLocaleString()}</td>
+                        <td>
+                          <button 
+                            onClick={() => handleDeleteContact(contact._id)}
+                            className="delete-btn"
+                            title="Delete Contact"
+                          >
+                            🗑️ Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="empty-state">
+                  <p>No user contacts found. Users can add their contact information from the dashboard.</p>
+                </div>
+              )}
+              
+              <button 
+                onClick={fetchUserContacts} 
+                className="btn btn-secondary refresh-btn"
+                disabled={loadingContacts}
+              >
+                {loadingContacts ? 'Refreshing...' : '🔄 Refresh Contacts'}
+              </button>
+            </div>
+          </div>
+        )}
+
+
+
+        {activeTab === 'map-create' && (
+          <div className="map-create-content" style={{
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            borderRadius: '8px',
+            padding: '20px',
+            color: 'white'
+          }}>
+            <h2 style={{ color: 'white', marginBottom: '10px' }}>Create RedZone on Map</h2>
+            <p style={{ color: 'rgba(255, 255, 255, 0.8)', marginBottom: '20px' }}>Click on the map to select a location for the new RedZone</p>
+            
+            <div className="map-controls" style={{ marginBottom: '20px' }}>
+              <button 
+                className={`btn ${mapMode === 'view' ? 'btn-secondary' : 'btn-ghost'}`}
+                onClick={() => {
+                  setMapMode('view')
+                  setSelectedCoords(null)
+                  setShowCreateForm(false)
+                }}
+              >
+                👁️ View Mode
+              </button>
+              <button 
+                className={`btn ${mapMode === 'create' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setMapMode('create')}
+              >
+                ➕ Create Mode
+              </button>
+              {selectedCoords && (
+                <span className="selected-coords" style={{
+                  color: '#60a5fa',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  marginLeft: '15px'
+                }}>
+                  Selected: {selectedCoords.lat.toFixed(6)}, {selectedCoords.lng.toFixed(6)}
+                </span>
+              )}
+            </div>
+
+            <div className="map-create-container" style={{ 
+              height: '400px', 
+              width: '100%', 
+              border: '2px solid rgba(255, 255, 255, 0.2)', 
+              borderRadius: '8px',
+              overflow: 'hidden',
+              marginBottom: '20px',
+              backgroundColor: 'rgba(0, 0, 0, 0.3)'
+            }}>
+              <MapContainer
+                center={[MAP_CONFIG.defaultCenter.lat, MAP_CONFIG.defaultCenter.lng]}
+                zoom={MAP_CONFIG.defaultZoom}
+                style={{ height: '100%', width: '100%' }}
+                maxBounds={[[MAP_CONFIG.maxBounds.southWest.lat, MAP_CONFIG.maxBounds.southWest.lng], [MAP_CONFIG.maxBounds.northEast.lat, MAP_CONFIG.maxBounds.northEast.lng]]}
+                maxBoundsViscosity={1.0}
+                {...MAP_CONFIG.leafletOptions}
+              >
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                
+                <MapClickHandler />
+                {selectedCoords && <MapCenterUpdater center={selectedCoords} />}
+                
+                {/* Show existing approved red zones as circles */}
+                {redZones
+                  .filter(zone => zone.status === 'approved' && zone.coordinates && zone.coordinates.lat && zone.coordinates.lng)
+                  .map((zone) => (
+                    <Circle
+                      key={zone._id}
+                      center={[zone.coordinates.lat, zone.coordinates.lng]}
+                      radius={500} // 500 meter radius
+                      pathOptions={{
+                        color: getCircleColor(zone.severity),
+                        fillColor: getCircleColor(zone.severity),
+                        fillOpacity: 0.3,
+                        weight: 2
+                      }}
+                    >
+                      <Popup>
+                        <div>
+                          <h4>{zone.title}</h4>
+                          <p><strong>Severity:</strong> {zone.severity}</p>
+                          <p><strong>Description:</strong> {zone.description}</p>
+                          <p><strong>Coordinates:</strong> {zone.coordinates.lat.toFixed(6)}, {zone.coordinates.lng.toFixed(6)}</p>
+                        </div>
+                      </Popup>
+                    </Circle>
+                  ))
+                }
+                
+                {/* Show selected location as a circle */}
+                {selectedCoords && (
+                  <Circle
+                    center={[selectedCoords.lat, selectedCoords.lng]}
+                    radius={500}
+                    pathOptions={{
+                      color: getCircleColor(mapRedZone.severity),
+                      fillColor: getCircleColor(mapRedZone.severity),
+                      fillOpacity: 0.5,
+                      weight: 3,
+                      dashArray: '10, 10' // Dashed border to indicate it's being created
+                    }}
+                  />
+                )}
+              </MapContainer>
+            </div>
+
+            {/* Instructions */}
+            <div className="instructions" style={{ 
+              backgroundColor: mapMode === 'create' ? 'rgba(33, 150, 243, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+              padding: '15px',
+              borderRadius: '8px',
+              marginBottom: '20px',
+              border: mapMode === 'create' ? '2px solid #2196f3' : '1px solid rgba(255, 255, 255, 0.2)'
+            }}>
+              {mapMode === 'view' ? (
+                <p style={{ margin: 0, color: 'rgba(255, 255, 255, 0.8)' }}>
+                  👁️ <strong>View Mode:</strong> You can see existing RedZones on the map. Switch to Create Mode to add new ones.
+                </p>
+              ) : (
+                <p style={{ margin: 0, color: '#60a5fa' }}>
+                  ➕ <strong>Create Mode:</strong> Click anywhere on the map to select a location for your new RedZone. A red circle will appear showing the danger area.
+                </p>
+              )}
+            </div>
+
+            {/* Creation Form */}
+            {showCreateForm && selectedCoords && (
+              <div className="create-form" style={{
+                backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                border: '2px solid #2196f3',
+                borderRadius: '8px',
+                padding: '20px',
+                marginBottom: '20px'
+              }}>
+                <h3 style={{ marginTop: 0, color: '#60a5fa' }}>Create RedZone at Selected Location</h3>
+                <form onSubmit={handleCreateMapRedZone}>
+                  <div className="form-group">
+                    <label htmlFor="map-title">Title:</label>
+                    <input
+                      type="text"
+                      id="map-title"
+                      value={mapRedZone.title}
+                      onChange={(e) => setMapRedZone({...mapRedZone, title: e.target.value})}
+                      required
+                      placeholder="e.g., Market Area Incident"
+                    />
+                  </div>
+                  
+                  <div className="form-group">
+                    <label htmlFor="map-description">Description:</label>
+                    <textarea
+                      id="map-description"
+                      value={mapRedZone.description}
+                      onChange={(e) => setMapRedZone({...mapRedZone, description: e.target.value})}
+                      required
+                      placeholder="Describe the danger or incident..."
+                      rows="3"
+                    />
+                  </div>
+                  
+                  <div className="form-group">
+                    <label htmlFor="map-severity">Severity Level:</label>
+                    <select
+                      id="map-severity"
+                      value={mapRedZone.severity}
+                      onChange={(e) => setMapRedZone({...mapRedZone, severity: e.target.value})}
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                  
+                  <div className="form-group" style={{ 
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    padding: '10px',
+                    borderRadius: '4px',
+                    marginBottom: '15px',
+                    color: 'rgba(255, 255, 255, 0.9)'
+                  }}>
+                    <strong>Selected Coordinates:</strong><br/>
+                    Latitude: {selectedCoords.lat.toFixed(6)}<br/>
+                    Longitude: {selectedCoords.lng.toFixed(6)}
+                  </div>
+                  
+                  <div className="form-actions" style={{ display: 'flex', gap: '10px' }}>
+                    <button type="submit" className="btn btn-primary">
+                      ✓ Create RedZone
+                    </button>
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        setShowCreateForm(false)
+                        setSelectedCoords(null)
+                        setMapRedZone({
+                          title: '',
+                          description: '',
+                          severity: 'medium',
+                          coordinates: null
+                        })
+                      }}
+                    >
+                      ❌ Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+            
+            {/* Statistics */}
+            <div className="redzone-stats" style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '15px',
+              marginTop: '20px'
+            }}>
+              <div className="stat-card" style={{ backgroundColor: 'rgba(46, 125, 50, 0.2)', padding: '15px', borderRadius: '8px' }}>
+                <h4 style={{ margin: '0 0 10px 0', color: '#4ade80' }}>Total RedZones</h4>
+                <p style={{ margin: 0, fontSize: '24px', fontWeight: 'bold', color: '#4ade80' }}>
+                  {redZones.filter(z => z.status === 'approved').length}
+                </p>
+              </div>
+              <div className="stat-card" style={{ backgroundColor: 'rgba(245, 127, 23, 0.2)', padding: '15px', borderRadius: '8px' }}>
+                <h4 style={{ margin: '0 0 10px 0', color: '#fbbf24' }}>High Severity</h4>
+                <p style={{ margin: 0, fontSize: '24px', fontWeight: 'bold', color: '#fbbf24' }}>
+                  {redZones.filter(z => z.status === 'approved' && z.severity === 'high').length}
+                </p>
+              </div>
+              <div className="stat-card" style={{ backgroundColor: 'rgba(21, 101, 192, 0.2)', padding: '15px', borderRadius: '8px' }}>
+                <h4 style={{ margin: '0 0 10px 0', color: '#60a5fa' }}>With Coordinates</h4>
+                <p style={{ margin: 0, fontSize: '24px', fontWeight: 'bold', color: '#60a5fa' }}>
+                  {redZones.filter(z => z.status === 'approved' && z.coordinates && z.coordinates.lat).length}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* RedZones Management */}
+        {activeTab === 'users' && (
+          <div className="redzones-management">
+            <div className="redzones-grid">
+              {/* Manage RedZones Card */}
+              <div className="card manage-redzones-card">
+                <h2>Manage RedZones</h2>
+                <div className="redzones-list">
+                  {loadingRedZones ? (
+                    <p>Loading RedZones...</p>
+                  ) : redZones.filter(zone => zone.status === 'pending').length > 0 ? (
+                    <table className="redzones-table">
+                      <thead>
+                        <tr>
+                          <th>Title</th>
+                          <th>Location</th>
+                          <th>Severity</th>
+                          <th>Status</th>
+                          <th>Image</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {redZones
+                          .filter(zone => zone.status === 'pending')
+                          .map((zone) => (
+                            <tr key={zone._id} className={`severity-${zone.severity}`}>
+                              <td>{zone.title}</td>
+                              <td>{zone.location}</td>
+                              <td>
+                                <span className={`severity-badge ${zone.severity}`}>
+                                  {zone.severity.charAt(0).toUpperCase() + zone.severity.slice(1)}
+                                </span>
+                              </td>
+                              <td>
+                                <span className={`status-badge ${zone.status}`}>
+                                  {zone.status.charAt(0).toUpperCase() + zone.status.slice(1)}
+                                </span>
+                              </td>
+                              <td>
+                                {zone.imageUrl ? (
+                                  <img 
+                                    src={`${API_BASE_URL}${zone.imageUrl}`} 
+                                    alt="RedZone" 
+                                    className="redzone-thumbnail" 
+                                    onClick={() => window.open(`${API_BASE_URL}${zone.imageUrl}`, '_blank')}
+                                  />
+                                ) : (
+                                  <span className="no-image">No image</span>
+                                )}
+                              </td>
+                              <td className="action-buttons">
+                                <button 
+                                  onClick={() => handleApproveRedZone(zone._id)}
+                                  className="approve-btn"
+                                  title="Approve"
+                                >
+                                  ✅
+                                </button>
+                                <button 
+                                  onClick={() => handleRejectRedZone(zone._id)}
+                                  className="reject-btn"
+                                  title="Reject"
+                                >
+                                  ❌
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p>No pending RedZones found.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Add New RedZone Card */}
+              <div className="card add-redzone-card">
+                <h2>Add New RedZone</h2>
+                <form onSubmit={handleSubmitRedZone} className="redzone-form">
+                  <div className="form-group">
+                    <label htmlFor="title">Title</label>
+                    <input
+                      type="text"
+                      id="title"
+                      value={newRedZone.title}
+                      onChange={(e) => setNewRedZone({...newRedZone, title: e.target.value})}
+                      required
+                    />
+                  </div>
+                  
+                  <div className="form-group">
+                    <label htmlFor="description">Description</label>
+                    <textarea
+                      id="description"
+                      value={newRedZone.description}
+                      onChange={(e) => setNewRedZone({...newRedZone, description: e.target.value})}
+                      required
+                    />
+                  </div>
+                  
+                  <div className="form-group">
+                    <label htmlFor="location">Location</label>
+                    <input
+                      type="text"
+                      id="location"
+                      value={newRedZone.location}
+                      onChange={(e) => setNewRedZone({...newRedZone, location: e.target.value})}
+                      required
+                    />
+                  </div>
+                  
+                  <div className="form-group">
+                    <label htmlFor="severity">Severity</label>
+                    <select
+                      id="severity"
+                      value={newRedZone.severity}
+                      onChange={(e) => setNewRedZone({...newRedZone, severity: e.target.value})}
+                      required
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                  
+                  <button type="submit" className="btn btn-primary">Create RedZone</button>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  )
+}
