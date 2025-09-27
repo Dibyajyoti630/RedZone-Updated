@@ -17,12 +17,15 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 // Load environment variables - prioritize .env.local over .env
-const envLocalPath = path.resolve(__dirname, '../.env.local')
+// Use the correct path for .env.local (in the same directory as this file)
+const envLocalPath = path.resolve(__dirname, '.env.local')
+console.log('Looking for .env.local at:', envLocalPath)
 if (fs.existsSync(envLocalPath)) {
   console.log('Loading environment variables from .env.local')
   dotenv.config({ path: envLocalPath })
 } else {
-  const envPath = path.resolve(__dirname, '../.env')
+  const envPath = path.resolve(__dirname, '.env')
+  console.log('Looking for .env at:', envPath)
   if (fs.existsSync(envPath)) {
     console.log('Loading environment variables from .env')
     dotenv.config({ path: envPath })
@@ -52,12 +55,15 @@ const connectDB = async () => {
   try {
     // Check if MongoDB URI is a placeholder
     const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/redzoneadmin';
+    console.log('Raw MONGODB_URI from env:', process.env.MONGODB_URI);
+    console.log('Using mongoURI:', mongoURI);
     
     // Add database name if it's an Atlas connection without database specified
     let finalURI = mongoURI;
     if (mongoURI.includes('mongodb+srv') && !mongoURI.includes('/redzoneadmin')) {
       // Insert database name into Atlas URI
       finalURI = mongoURI.replace('mongodb.net/', 'mongodb.net/redzoneadmin');
+      console.log('Modified URI with database name:', finalURI);
     }
     
     if (mongoURI.includes('your_mongodb_connection_string_here')) {
@@ -66,6 +72,7 @@ const connectDB = async () => {
       await mongoose.connect('mongodb://localhost:27017/redzoneadmin');
     } else {
       console.log('Connecting to MongoDB Atlas...');
+      console.log('Final connection URI:', finalURI);
       await mongoose.connect(finalURI, {
         serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
         socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
