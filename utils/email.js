@@ -165,7 +165,7 @@ const createEmailTemplate = (redZone, type = 'approved', serverUrl = 'http://loc
             </div>
             
             <div class="footer">
-                <strong>RedZone Cursor</strong><br>
+                <strong>RedZone</strong><br>
                 Keeping communities safe through real-time alerts<br>
                 <small>This is an automated safety notification. Stay vigilant and stay safe.</small>
             </div>
