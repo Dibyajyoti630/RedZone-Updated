@@ -82,9 +82,12 @@ export default function Admin({ onLogout }) {
   const [showCreateForm, setShowCreateForm] = useState(false)
   const navigate = useNavigate()
   
-  // Close mobile menu when clicking outside
-  const handleOverlayClick = () => {
-    setMobileMenuOpen(false)
+  // Close mobile menu when clicking outside or on overlay
+  const handleOverlayClick = (e) => {
+    // Only close if clicking directly on the overlay, not on its children
+    if (e.target === e.currentTarget) {
+      setMobileMenuOpen(false)
+    }
   }
   
   // Handle hamburger menu toggle with animation
@@ -665,18 +668,30 @@ export default function Admin({ onLogout }) {
   return (
     <div className="admin-container">
       {/* Mobile Menu Overlay */}
-      {mobileMenuOpen && <div className="mobile-overlay" onClick={handleOverlayClick}></div>}
+      {mobileMenuOpen && (
+        <div 
+          className="mobile-overlay" 
+          onClick={handleOverlayClick}
+        ></div>
+      )}
       
       {/* Mobile Hamburger Menu */}
       <div className="mobile-header">
-        <div className={`hamburger-menu ${mobileMenuOpen ? 'active' : ''}`} onClick={toggleMobileMenu}>
+        <div 
+          className={`hamburger-menu ${mobileMenuOpen ? 'active' : ''}`} 
+          onClick={toggleMobileMenu}
+        >
           <span></span>
           <span></span>
           <span></span>
         </div>
         <h1>Admin Dashboard</h1>
         <div className="mobile-actions">
-          <button className="mobile-refresh" onClick={fetchStats} disabled={loading}>
+          <button 
+            className="mobile-refresh" 
+            onClick={fetchStats} 
+            disabled={loading}
+          >
             <span>🔄</span>
           </button>
         </div>
@@ -815,77 +830,87 @@ export default function Admin({ onLogout }) {
         </div>
       </header>
 
-      {/* Admin Navigation */}
-      <nav ref={navRef} className={`admin-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}>
+      {/* Admin Navigation - Top Navbar */}
+      <nav 
+        ref={navRef} 
+        className={`admin-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}
+      >
         <div className="mobile-nav-header">
           <h2>Menu</h2>
-          <button className="close-mobile-menu" onClick={() => setMobileMenuOpen(false)}>×</button>
+          <button 
+            className="close-mobile-menu" 
+            onClick={() => setMobileMenuOpen(false)}
+          >
+            ×
+          </button>
         </div>
-        <button 
-          className={`admin-nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
-          onClick={() => {
-            setActiveTab('dashboard')
-            setMobileMenuOpen(false)
-          }}
-        >
-          <DashboardIcon />
-          <span>Dashboard</span>
-        </button>
-        <button 
-          className={`admin-nav-item ${activeTab === 'users' ? 'active' : ''}`}
-          onClick={() => {
-            setActiveTab('users')
-            setMobileMenuOpen(false)
-          }}
-        >
-          <AdminIcon />
-          <span>Manage RedZones</span>
-        </button>
-        <button 
-          className={`admin-nav-item ${activeTab === 'map-create' ? 'active' : ''}`}
-          onClick={() => {
-            setActiveTab('map-create')
-            setMobileMenuOpen(false)
-          }}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" aria-hidden="true">
-            <defs>
-              <style>
-                {`.s { fill: none; stroke: currentColor; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }`}
-                {`.pin-fill { fill: #ffffff; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }`}
-              </style>
-            </defs>
-            <path className="s" d="M6 18 L6 46 L22 54 L22 26 Z"/>
-            <path className="s" d="M22 26 L22 54 L38 48 L38 20 Z"/>
-            <path className="s" d="M22 26 L38 20"/>
-            <path className="s" d="M38 20 L58 14 L58 42 L38 48 Z"/>
-            <path className="s" d="M22 54 L30 50"/>
-            <path className="s" d="M48 36 C48 30.5 44.418 26 40 26 C35.582 26 32 30.5 32 36 C32 42 40 52 40 52 C40 52 48 42 48 36 Z"/>
-            <circle className="pin-fill" cx="40" cy="36" r="4"/>
-            <circle cx="40" cy="36" r="1.6" fill="currentColor"/>
-          </svg>
-          <span>Create RedZone</span>
-        </button>
-        <button 
-          className={`admin-nav-item ${activeTab === 'history' ? 'active' : ''}`}
-          onClick={() => {
-            setActiveTab('history')
-            setMobileMenuOpen(false)
-          }}
-        >
-          <HistoryIcon />
-          <span>History</span>
-        </button>
-        <button 
-          className={`admin-nav-item ${activeTab === 'security' ? 'active' : ''}`}
-          onClick={() => {
-            setActiveTab('security')
-            setMobileMenuOpen(false)
-          }}
-        >
-          <ShieldIcon />
-          <span>Users</span>
-        </button>
+        <div className="nav-links-container">
+          <button 
+            className={`admin-nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('dashboard')
+              setMobileMenuOpen(false)
+            }}
+          >
+            <DashboardIcon />
+            <span>Dashboard</span>
+          </button>
+          <button 
+            className={`admin-nav-item ${activeTab === 'users' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('users')
+              setMobileMenuOpen(false)
+            }}
+          >
+            <AdminIcon />
+            <span>Manage RedZones</span>
+          </button>
+          <button 
+            className={`admin-nav-item ${activeTab === 'map-create' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('map-create')
+              setMobileMenuOpen(false)
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" aria-hidden="true">
+              <defs>
+                <style>
+                  {`.s { fill: none; stroke: currentColor; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }`}
+                  {`.pin-fill { fill: #ffffff; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }`}
+                </style>
+              </defs>
+              <path className="s" d="M6 18 L6 46 L22 54 L22 26 Z"/>
+              <path className="s" d="M22 26 L22 54 L38 48 L38 20 Z"/>
+              <path className="s" d="M22 26 L38 20"/>
+              <path className="s" d="M38 20 L58 14 L58 42 L38 48 Z"/>
+              <path className="s" d="M22 54 L30 50"/>
+              <path className="s" d="M48 36 C48 30.5 44.418 26 40 26 C35.582 26 32 30.5 32 36 C32 42 40 52 40 52 C40 52 48 42 48 36 Z"/>
+              <circle className="pin-fill" cx="40" cy="36" r="4"/>
+              <circle cx="40" cy="36" r="1.6" fill="currentColor"/>
+            </svg>
+            <span>Create RedZone</span>
+          </button>
+          <button 
+            className={`admin-nav-item ${activeTab === 'history' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('history')
+              setMobileMenuOpen(false)
+            }}
+          >
+            <HistoryIcon />
+            <span>History</span>
+          </button>
+          <button 
+            className={`admin-nav-item ${activeTab === 'security' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('security')
+              setMobileMenuOpen(false)
+            }}
+          >
+            <ShieldIcon />
+            <span>Users</span>
+          </button>
+        </div>
       </nav>
 
       {/* Main Content */}
@@ -1262,8 +1287,16 @@ export default function Admin({ onLogout }) {
                       value={mapRedZone.description}
                       onChange={(e) => setMapRedZone({...mapRedZone, description: e.target.value})}
                       required
-                      placeholder="Describe the danger or incident..."
-                      rows="3"
+                      placeholder="Describe the danger in detail"
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        borderRadius: '4px',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                        color: 'white',
+                        minHeight: '80px'
+                      }}
                     />
                   </div>
                   
@@ -1273,35 +1306,32 @@ export default function Admin({ onLogout }) {
                       id="map-severity"
                       value={mapRedZone.severity}
                       onChange={(e) => setMapRedZone({...mapRedZone, severity: e.target.value})}
+                      required
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        borderRadius: '4px',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                        color: 'white'
+                      }}
                     >
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
+                      <option value="low">Low - Caution advised</option>
+                      <option value="medium">Medium - Potential danger</option>
+                      <option value="high">High - Immediate danger</option>
                     </select>
                   </div>
                   
-                  <div className="form-group" style={{ 
-                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                    padding: '10px',
-                    borderRadius: '4px',
-                    marginBottom: '15px',
-                    color: 'rgba(255, 255, 255, 0.9)'
+                  <div className="form-actions" style={{ 
+                    display: 'flex', 
+                    gap: '10px', 
+                    justifyContent: 'flex-end',
+                    marginTop: '20px'
                   }}>
-                    <strong>Selected Coordinates:</strong><br/>
-                    Latitude: {selectedCoords.lat.toFixed(6)}<br/>
-                    Longitude: {selectedCoords.lng.toFixed(6)}
-                  </div>
-                  
-                  <div className="form-actions" style={{ display: 'flex', gap: '10px' }}>
-                    <button type="submit" className="btn btn-primary">
-                      ✓ Create RedZone
-                    </button>
                     <button 
-                      type="button" 
-                      className="btn btn-secondary"
+                      type="button"
                       onClick={() => {
                         setShowCreateForm(false)
-                        setSelectedCoords(null)
                         setMapRedZone({
                           title: '',
                           description: '',
@@ -1309,94 +1339,70 @@ export default function Admin({ onLogout }) {
                           coordinates: null
                         })
                       }}
+                      className="btn btn-ghost"
+                      style={{ color: 'white' }}
                     >
-                      ❌ Cancel
+                      Cancel
+                    </button>
+                    <button 
+                      type="submit" 
+                      className="btn btn-primary"
+                      style={{ 
+                        backgroundColor: '#3498db',
+                        color: 'white',
+                        border: 'none',
+                        padding: '10px 20px',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Create RedZone
                     </button>
                   </div>
                 </form>
               </div>
             )}
-            
-            {/* Statistics */}
-            <div className="redzone-stats" style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-              gap: '15px',
-              marginTop: '20px'
-            }}>
-              <div className="stat-card" style={{ backgroundColor: 'rgba(46, 125, 50, 0.2)', padding: '15px', borderRadius: '8px' }}>
-                <h4 style={{ margin: '0 0 10px 0', color: '#4ade80' }}>Total RedZones</h4>
-                <p style={{ margin: 0, fontSize: '24px', fontWeight: 'bold', color: '#4ade80' }}>
-                  {redZones.filter(z => z.status === 'approved').length}
-                </p>
-              </div>
-              <div className="stat-card" style={{ backgroundColor: 'rgba(245, 127, 23, 0.2)', padding: '15px', borderRadius: '8px' }}>
-                <h4 style={{ margin: '0 0 10px 0', color: '#fbbf24' }}>High Severity</h4>
-                <p style={{ margin: 0, fontSize: '24px', fontWeight: 'bold', color: '#fbbf24' }}>
-                  {redZones.filter(z => z.status === 'approved' && z.severity === 'high').length}
-                </p>
-              </div>
-              <div className="stat-card" style={{ backgroundColor: 'rgba(21, 101, 192, 0.2)', padding: '15px', borderRadius: '8px' }}>
-                <h4 style={{ margin: '0 0 10px 0', color: '#60a5fa' }}>With Coordinates</h4>
-                <p style={{ margin: 0, fontSize: '24px', fontWeight: 'bold', color: '#60a5fa' }}>
-                  {redZones.filter(z => z.status === 'approved' && z.coordinates && z.coordinates.lat).length}
-                </p>
-              </div>
-            </div>
           </div>
         )}
-        {/* RedZones Management */}
+
         {activeTab === 'users' && (
           <div className="redzones-management">
+            <h2>Manage RedZones</h2>
             <div className="redzones-grid">
-              {/* Manage RedZones Card */}
-              <div className="card manage-redzones-card">
-                <h2>Manage RedZones</h2>
-                <div className="redzones-list">
-                  {loadingRedZones ? (
-                    <p>Loading RedZones...</p>
-                  ) : redZones.filter(zone => zone.status === 'pending').length > 0 ? (
-                    <table className="redzones-table">
-                      <thead>
-                        <tr>
-                          <th>Title</th>
-                          <th>Location</th>
-                          <th>Severity</th>
-                          <th>Status</th>
-                          <th>Image</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {redZones
-                          .filter(zone => zone.status === 'pending')
-                          .map((zone) => (
-                            <tr key={zone._id} className={`severity-${zone.severity}`}>
-                              <td>{zone.title}</td>
-                              <td>{zone.location}</td>
-                              <td>
-                                <span className={`severity-badge ${zone.severity}`}>
-                                  {zone.severity.charAt(0).toUpperCase() + zone.severity.slice(1)}
-                                </span>
-                              </td>
-                              <td>
-                                <span className={`status-badge ${zone.status}`}>
-                                  {zone.status.charAt(0).toUpperCase() + zone.status.slice(1)}
-                                </span>
-                              </td>
-                              <td>
-                                {zone.imageUrl ? (
-                                  <img 
-                                    src={`${API_BASE_URL}${zone.imageUrl}`} 
-                                    alt="RedZone" 
-                                    className="redzone-thumbnail" 
-                                    onClick={() => window.open(`${API_BASE_URL}${zone.imageUrl}`, '_blank')}
-                                  />
-                                ) : (
-                                  <span className="no-image">No image</span>
-                                )}
-                              </td>
-                              <td className="action-buttons">
+              <div className="manage-redzones-card">
+                <h3>All RedZones</h3>
+                {loadingRedZones ? (
+                  <p>Loading RedZones...</p>
+                ) : (
+                  <table className="redzones-table">
+                    <thead>
+                      <tr>
+                        <th>Title</th>
+                        <th>Location</th>
+                        <th>Level</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {redZones
+                        .filter(zone => zone.status === 'pending')
+                        .map((zone) => (
+                          <tr key={zone._id}>
+                            <td>{zone.title}</td>
+                            <td>{zone.location}</td>
+                            <td>
+                              <span className={`severity-badge ${zone.severity}`}>
+                                {zone.severity.charAt(0).toUpperCase() + zone.severity.slice(1)}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={`status-badge ${zone.status}`}>
+                                {zone.status.charAt(0).toUpperCase() + zone.status.slice(1)}
+                              </span>
+                            </td>
+                            <td>
+                              <div className="action-buttons">
                                 <button 
                                   onClick={() => handleApproveRedZone(zone._id)}
                                   className="approve-btn"
@@ -1411,68 +1417,76 @@ export default function Admin({ onLogout }) {
                                 >
                                   ❌
                                 </button>
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <p>No pending RedZones found.</p>
-                  )}
-                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                )}
+                
+                {redZones.filter(zone => zone.status === 'pending').length === 0 && !loadingRedZones && (
+                  <div className="empty-state">
+                    <p>No pending RedZones for review.</p>
+                  </div>
+                )}
               </div>
-
-              {/* Add New RedZone Card */}
-              <div className="card add-redzone-card">
-                <h2>Add New RedZone</h2>
+              
+              <div className="add-redzone-card">
+                <h3>Add New RedZone</h3>
                 <form onSubmit={handleSubmitRedZone} className="redzone-form">
                   <div className="form-group">
-                    <label htmlFor="title">Title</label>
+                    <label htmlFor="title">Title:</label>
                     <input
                       type="text"
                       id="title"
                       value={newRedZone.title}
                       onChange={(e) => setNewRedZone({...newRedZone, title: e.target.value})}
                       required
+                      placeholder="E.g., Dangerous Intersection"
                     />
                   </div>
                   
                   <div className="form-group">
-                    <label htmlFor="description">Description</label>
+                    <label htmlFor="description">Description:</label>
                     <textarea
                       id="description"
                       value={newRedZone.description}
                       onChange={(e) => setNewRedZone({...newRedZone, description: e.target.value})}
                       required
+                      placeholder="Describe the danger in detail"
                     />
                   </div>
                   
                   <div className="form-group">
-                    <label htmlFor="location">Location</label>
+                    <label htmlFor="location">Location:</label>
                     <input
                       type="text"
                       id="location"
                       value={newRedZone.location}
                       onChange={(e) => setNewRedZone({...newRedZone, location: e.target.value})}
                       required
+                      placeholder="E.g., Gunupur Market Area"
                     />
                   </div>
                   
                   <div className="form-group">
-                    <label htmlFor="severity">Severity</label>
+                    <label htmlFor="severity">Severity Level:</label>
                     <select
                       id="severity"
                       value={newRedZone.severity}
                       onChange={(e) => setNewRedZone({...newRedZone, severity: e.target.value})}
                       required
                     >
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
+                      <option value="low">Low - Caution advised</option>
+                      <option value="medium">Medium - Potential danger</option>
+                      <option value="high">High - Immediate danger</option>
                     </select>
                   </div>
                   
-                  <button type="submit" className="btn btn-primary">Create RedZone</button>
+                  <button type="submit" className="btn btn-primary">
+                    Add RedZone
+                  </button>
                 </form>
               </div>
             </div>
