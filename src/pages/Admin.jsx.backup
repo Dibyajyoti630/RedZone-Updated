@@ -20,6 +20,7 @@ export default function Admin({ onLogout }) {
         if (mapMode === 'create') {
           const { lat, lng } = e.latlng
           setSelectedCoords({ lat, lng })
+          setShowCreateForm(true)
           console.log('Red zone location selected:', { lat, lng })
         }
       }
@@ -69,10 +70,6 @@ export default function Admin({ onLogout }) {
     severity: 'medium'
   })
   
-  // Add state for image files
-  const [redZoneImage, setRedZoneImage] = useState(null)
-  const [mapRedZoneImage, setMapRedZoneImage] = useState(null)
-
   // Map-based red zone creation state
   const [mapRedZone, setMapRedZone] = useState({
     title: '',
@@ -82,6 +79,7 @@ export default function Admin({ onLogout }) {
   })
   const [mapMode, setMapMode] = useState('view') // 'view' or 'create'
   const [selectedCoords, setSelectedCoords] = useState(null)
+  const [showCreateForm, setShowCreateForm] = useState(false)
   const navigate = useNavigate()
   
   // Close mobile menu when clicking outside or on overlay
@@ -512,24 +510,19 @@ export default function Admin({ onLogout }) {
         return
       }
 
-      // Create FormData for file upload
-      const formData = new FormData()
-      formData.append('title', newRedZone.title)
-      formData.append('description', newRedZone.description)
-      formData.append('location', newRedZone.location)
-      formData.append('severity', newRedZone.severity)
-      formData.append('status', 'approved') // Admin-created zones are auto-approved
-      
-      if (redZoneImage) {
-        formData.append('image', redZoneImage)
+      // Add status as approved since it's created by admin
+      const redZoneData = {
+        ...newRedZone,
+        status: 'approved'
       }
 
       const response = await fetch(API_ENDPOINTS.REDZONES_CREATE, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         },
-        body: formData
+        body: JSON.stringify(redZoneData)
       })
 
       if (!response.ok) {
@@ -537,7 +530,7 @@ export default function Admin({ onLogout }) {
         throw new Error(`HTTP error! status: ${response.status}, message: ${errorBody}`)
       }
 
-      const result = await response.json()
+      await response.json()
 
       // Reset form
       setNewRedZone({
@@ -546,13 +539,12 @@ export default function Admin({ onLogout }) {
         location: '',
         severity: 'medium'
       })
-      setRedZoneImage(null)
 
       // Add the new RedZone to the list with approved status
       setRedZones(prevRedZones => [
         {
-          ...result.redZone,
-          createdAt: new Date().toISOString()
+          ...newRedZone,
+          status: 'approved'
         },
         ...prevRedZones
       ])
@@ -581,30 +573,27 @@ export default function Admin({ onLogout }) {
         return
       }
 
-      // Create FormData for file upload
-      const formData = new FormData()
-      formData.append('title', mapRedZone.title)
-      formData.append('description', mapRedZone.description)
-      formData.append('location', `${selectedCoords.lat.toFixed(6)}, ${selectedCoords.lng.toFixed(6)}`)
-      formData.append('severity', newRedZone.severity) // Use main form severity instead of mapRedZone.severity
-      formData.append('status', 'approved') // Admin-created zones are auto-approved
-    
-      // Add coordinates as a JSON string
-      formData.append('coordinates', JSON.stringify({
-        lat: selectedCoords.lat,
-        lng: selectedCoords.lng
-      }))
-      
-      if (mapRedZoneImage) {
-        formData.append('image', mapRedZoneImage)
+      const redZoneData = {
+        title: mapRedZone.title,
+        description: mapRedZone.description,
+        location: `${selectedCoords.lat.toFixed(6)}, ${selectedCoords.lng.toFixed(6)}`,
+        severity: mapRedZone.severity,
+        coordinates: {
+          lat: selectedCoords.lat,
+          lng: selectedCoords.lng
+        },
+        status: 'approved' // Admin-created zones are auto-approved
       }
+
+      console.log('Creating red zone with data:', redZoneData)
 
       const response = await fetch(API_ENDPOINTS.REDZONES_CREATE, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         },
-        body: formData
+        body: JSON.stringify(redZoneData)
       })
 
       if (!response.ok) {
@@ -612,7 +601,7 @@ export default function Admin({ onLogout }) {
         throw new Error(`HTTP error! status: ${response.status}, message: ${errorBody}`)
       }
 
-      const result = await response.json()
+      const newZone = await response.json()
 
       // Reset forms and state
       setMapRedZone({
@@ -621,8 +610,8 @@ export default function Admin({ onLogout }) {
         severity: 'medium',
         coordinates: null
       })
-      setMapRedZoneImage(null)
       setSelectedCoords(null)
+      setShowCreateForm(false)
       setMapMode('view')
 
       // Refresh the red zones list to show the new zone immediately
@@ -630,22 +619,22 @@ export default function Admin({ onLogout }) {
 
       // Also add the new zone to current state for immediate visibility
       const newZoneForState = {
-        _id: result.redZone._id,
-        title: result.redZone.title,
-        description: result.redZone.description,
-        location: result.redZone.location,
-        severity: result.redZone.severity,
-        status: result.redZone.status,
-        coordinates: result.redZone.coordinates,
-        createdAt: result.redZone.createdAt,
-        reportedBy: result.redZone.reportedBy
+        _id: newZone.redZone._id,
+        title: newZone.redZone.title,
+        description: newZone.redZone.description,
+        location: newZone.redZone.location,
+        severity: newZone.redZone.severity,
+        status: newZone.redZone.status,
+        coordinates: newZone.redZone.coordinates,
+        createdAt: newZone.redZone.createdAt,
+        reportedBy: newZone.redZone.reportedBy
       }
-    
+      
       // Add to current state for immediate display
       setRedZones(prevRedZones => [newZoneForState, ...prevRedZones])
 
       alert('Red Zone created successfully and is now visible to all users!')
-      console.log('New red zone created with coordinates:', result.redZone.coordinates)
+      console.log('New red zone created with coordinates:', newZone.redZone.coordinates)
     } catch (err) {
       console.error('Error creating map-based RedZone:', err.message || err)
       setError(`Failed to create RedZone: ${err.message || 'Unknown error'}`)
@@ -891,6 +880,31 @@ export default function Admin({ onLogout }) {
             <span>Create RedZone</span>
           </button>
           <button 
+            className={`admin-nav-item ${activeTab === 'map-create' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('map-create')
+              setMobileMenuOpen(false)
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="18" height="18" aria-hidden="true">
+              <defs>
+                <style>
+                  {`.s { fill: none; stroke: currentColor; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }`}
+                  {`.pin-fill { fill: #ffffff; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }`}
+                </style>
+              </defs>
+              <path className="s" d="M6 18 L6 46 L22 54 L22 26 Z"/>
+              <path className="s" d="M22 26 L22 54 L38 48 L38 20 Z"/>
+              <path className="s" d="M22 26 L38 20"/>
+              <path className="s" d="M38 20 L58 14 L58 42 L38 48 Z"/>
+              <path className="s" d="M22 54 L30 50"/>
+              <path className="s" d="M48 36 C48 30.5 44.418 26 40 26 C35.582 26 32 30.5 32 36 C32 42 40 52 40 52 C40 52 48 42 48 36 Z"/>
+              <circle className="pin-fill" cx="40" cy="36" r="4"/>
+              <circle cx="40" cy="36" r="1.6" fill="currentColor"/>
+            </svg>
+            <span>Create on Map</span>
+          </button>
+          <button 
             className={`admin-nav-item ${activeTab === 'history' ? 'active' : ''}`}
             onClick={() => {
               setActiveTab('history')
@@ -1015,7 +1029,6 @@ export default function Admin({ onLogout }) {
                       <th>Location</th>
                       <th>Level</th>
                       <th>Status</th>
-                      <th>Image</th>
                       <th>Reviewed At</th>
                       {historyFilter === 'all' && <th>Actions</th>}
                     </tr>
@@ -1042,21 +1055,6 @@ export default function Admin({ onLogout }) {
                             <span className={`status-badge ${zone.status}`}>
                               {zone.status.charAt(0).toUpperCase() + zone.status.slice(1)}
                             </span>
-                          </td>
-                          <td>
-                            {zone.imageUrl ? (
-                              <img 
-                                src={`${API_BASE_URL}${zone.imageUrl}`} 
-                                alt={zone.title} 
-                                className="redzone-thumbnail"
-                                onError={(e) => {
-                                  e.target.onerror = null;
-                                  e.target.parentElement.innerHTML = '<span class="no-image">No image</span>';
-                                }}
-                              />
-                            ) : (
-                              <span className="no-image">No image</span>
-                            )}
                           </td>
                           <td>{new Date(zone.reviewedAt || zone.updatedAt).toLocaleString()}</td>
                           <td>
@@ -1144,6 +1142,244 @@ export default function Admin({ onLogout }) {
           </div>
         )}
 
+
+
+        {activeTab === 'map-create' && (
+          <div className="map-create-content" style={{
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            borderRadius: '8px',
+            padding: '20px',
+            color: 'white'
+          }}>
+            <h2 style={{ color: 'white', marginBottom: '10px' }}>Create RedZone on Map</h2>
+            <p style={{ color: 'rgba(255, 255, 255, 0.8)', marginBottom: '20px' }}>Click on the map to select a location for the new RedZone</p>
+            
+            <div className="map-controls" style={{ marginBottom: '20px' }}>
+              <button 
+                className={`btn ${mapMode === 'view' ? 'btn-secondary' : 'btn-ghost'}`}
+                onClick={() => {
+                  setMapMode('view')
+                  setSelectedCoords(null)
+                  setShowCreateForm(false)
+                }}
+              >
+                👁️ View Mode
+              </button>
+              <button 
+                className={`btn ${mapMode === 'create' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setMapMode('create')}
+              >
+                ➕ Create Mode
+              </button>
+              {selectedCoords && (
+                <span className="selected-coords" style={{
+                  color: '#60a5fa',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  marginLeft: '15px'
+                }}>
+                  Selected: {selectedCoords.lat.toFixed(6)}, {selectedCoords.lng.toFixed(6)}
+                </span>
+              )}
+            </div>
+
+            <div className="map-create-container" style={{ 
+              height: '400px', 
+              width: '100%', 
+              border: '2px solid rgba(255, 255, 255, 0.2)', 
+              borderRadius: '8px',
+              overflow: 'hidden',
+              marginBottom: '20px',
+              backgroundColor: 'rgba(0, 0, 0, 0.3)'
+            }}>
+              <MapContainer
+                center={[MAP_CONFIG.defaultCenter.lat, MAP_CONFIG.defaultCenter.lng]}
+                zoom={MAP_CONFIG.defaultZoom}
+                style={{ height: '100%', width: '100%' }}
+                maxBounds={[[MAP_CONFIG.maxBounds.southWest.lat, MAP_CONFIG.maxBounds.southWest.lng], [MAP_CONFIG.maxBounds.northEast.lat, MAP_CONFIG.maxBounds.northEast.lng]]}
+                maxBoundsViscosity={1.0}
+                {...MAP_CONFIG.leafletOptions}
+              >
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                
+                <MapClickHandler />
+                {selectedCoords && <MapCenterUpdater center={selectedCoords} />}
+                
+                {/* Show existing approved red zones as circles */}
+                {redZones
+                  .filter(zone => zone.status === 'approved' && zone.coordinates && zone.coordinates.lat && zone.coordinates.lng)
+                  .map((zone, index) => (
+                    <Circle
+                      key={`${zone._id}-${index}`}
+                      center={[zone.coordinates.lat, zone.coordinates.lng]}
+                      radius={500} // 500 meter radius
+                      pathOptions={{
+                        color: getCircleColor(zone.severity),
+                        fillColor: getCircleColor(zone.severity),
+                        fillOpacity: 0.3,
+                        weight: 2
+                      }}
+                    >
+                      <Popup>
+                        <div>
+                          <h4>{zone.title}</h4>
+                          <p><strong>Severity:</strong> {zone.severity}</p>
+                          <p><strong>Description:</strong> {zone.description}</p>
+                          <p><strong>Coordinates:</strong> {zone.coordinates.lat.toFixed(6)}, {zone.coordinates.lng.toFixed(6)}</p>
+                        </div>
+                      </Popup>
+                    </Circle>
+                  ))
+                }
+                
+                {/* Show selected location as a circle */}
+                {selectedCoords && (
+                  <Circle
+                    center={[selectedCoords.lat, selectedCoords.lng]}
+                    radius={500}
+                    pathOptions={{
+                      color: getCircleColor(mapRedZone.severity),
+                      fillColor: getCircleColor(mapRedZone.severity),
+                      fillOpacity: 0.5,
+                      weight: 3,
+                      dashArray: '10, 10' // Dashed border to indicate it's being created
+                    }}
+                  />
+                )}
+              </MapContainer>
+            </div>
+
+            {/* Instructions */}
+            <div className="instructions" style={{ 
+              backgroundColor: mapMode === 'create' ? 'rgba(33, 150, 243, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+              padding: '15px',
+              borderRadius: '8px',
+              marginBottom: '20px',
+              border: mapMode === 'create' ? '2px solid #2196f3' : '1px solid rgba(255, 255, 255, 0.2)'
+            }}>
+              {mapMode === 'view' ? (
+                <p style={{ margin: 0, color: 'rgba(255, 255, 255, 0.8)' }}>
+                  👁️ <strong>View Mode:</strong> You can see existing RedZones on the map. Switch to Create Mode to add new ones.
+                </p>
+              ) : (
+                <p style={{ margin: 0, color: '#60a5fa' }}>
+                  ➕ <strong>Create Mode:</strong> Click anywhere on the map to select a location for your new RedZone. A red circle will appear showing the danger area.
+                </p>
+              )}
+            </div>
+
+            {/* Creation Form */}
+            {showCreateForm && selectedCoords && (
+              <div className="create-form" style={{
+                backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                border: '2px solid #2196f3',
+                borderRadius: '8px',
+                padding: '20px',
+                marginBottom: '20px'
+              }}>
+                  <h3 style={{ marginTop: 0, color: '#60a5fa' }}>Create RedZone at Selected Location</h3>
+                  <form onSubmit={handleCreateMapRedZone}>
+                    <div className="form-group">
+                      <label htmlFor="map-title">Title:</label>
+                      <input
+                        type="text"
+                        id="map-title"
+                        value={mapRedZone.title}
+                        onChange={(e) => setMapRedZone({...mapRedZone, title: e.target.value})}
+                        required
+                        placeholder="e.g., Market Area Incident"
+                      />
+                    </div>
+                    
+                    <div className="form-group">
+                      <label htmlFor="map-description">Description:</label>
+                      <textarea
+                        id="map-description"
+                        value={mapRedZone.description}
+                        onChange={(e) => setMapRedZone({...mapRedZone, description: e.target.value})}
+                        required
+                        placeholder="Describe the danger in detail"
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          borderRadius: '4px',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                          color: 'white',
+                          minHeight: '80px'
+                        }}
+                      />
+                    </div>
+                    
+                    <div className="form-group">
+                      <label htmlFor="map-severity">Severity Level:</label>
+                      <select
+                        id="map-severity"
+                        value={mapRedZone.severity}
+                        onChange={(e) => setMapRedZone({...mapRedZone, severity: e.target.value})}
+                        required
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          borderRadius: '4px',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                          color: 'white'
+                        }}
+                      >
+                        <option value="low">Low - Caution advised</option>
+                        <option value="medium">Medium - Potential danger</option>
+                        <option value="high">High - Immediate danger</option>
+                      </select>
+                    </div>
+                    
+                    <div className="form-actions" style={{ 
+                      display: 'flex', 
+                      gap: '10px', 
+                      justifyContent: 'flex-end',
+                      marginTop: '20px'
+                    }}>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setShowCreateForm(false)
+                          setMapRedZone({
+                            title: '',
+                            description: '',
+                            severity: 'medium',
+                            coordinates: null
+                          })
+                        }}
+                        className="btn btn-ghost"
+                        style={{ color: 'white' }}
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        type="submit" 
+                        className="btn btn-primary"
+                        style={{ 
+                          backgroundColor: '#3498db',
+                          color: 'white',
+                          border: 'none',
+                          padding: '10px 20px',
+                          borderRadius: '4px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Create RedZone
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {activeTab === 'users' && (
           <div className="redzones-management">
             <h2>Manage RedZones</h2>
@@ -1160,7 +1396,6 @@ export default function Admin({ onLogout }) {
                         <th>Location</th>
                         <th>Level</th>
                         <th>Status</th>
-                        <th>Image</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
@@ -1180,21 +1415,6 @@ export default function Admin({ onLogout }) {
                               <span className={`status-badge ${zone.status}`}>
                                 {zone.status.charAt(0).toUpperCase() + zone.status.slice(1)}
                               </span>
-                            </td>
-                            <td>
-                              {zone.imageUrl ? (
-                                <img 
-                                  src={`${API_BASE_URL}${zone.imageUrl}`} 
-                                  alt={zone.title} 
-                                  className="redzone-thumbnail"
-                                  onError={(e) => {
-                                    e.target.onerror = null;
-                                    e.target.parentElement.innerHTML = '<span class="no-image">No image</span>';
-                                  }}
-                                />
-                              ) : (
-                                <span className="no-image">No image</span>
-                              )}
                             </td>
                             <td>
                               <div className="action-buttons">
@@ -1234,13 +1454,10 @@ export default function Admin({ onLogout }) {
           <div className="create-redzone-content">
             <h2>Create RedZone</h2>
             
-            {/* Form-based creation - Centered with increased width */}
-            <div className="add-redzone-card">
-              <h3>Add New RedZone</h3>
-              <form onSubmit={(e) => {
-                e.preventDefault();
-                // Don't submit form directly, let the single button handle it
-              }} className="redzone-form">
+            {/* Form-based creation */}
+            <div className="add-redzone-card" style={{ marginBottom: '30px' }}>
+              <h3>Add New RedZone Manually</h3>
+              <form onSubmit={handleSubmitRedZone} className="redzone-form">
                 <div className="form-group">
                   <label htmlFor="title">Title:</label>
                   <input
@@ -1281,77 +1498,38 @@ export default function Admin({ onLogout }) {
                   <select
                     id="severity"
                     value={newRedZone.severity}
-                    onChange={(e) => {
-                      const newSeverity = e.target.value;
-                      setNewRedZone({...newRedZone, severity: newSeverity});
-                    }}
+                    onChange={(e) => setNewRedZone({...newRedZone, severity: e.target.value})}
                     required
                   >
                     <option value="low">Low - Caution advised</option>
                     <option value="medium">Medium - Potential danger</option>
                     <option value="high">High - Immediate danger</option>
                   </select>
-                  {/* Visual indicator for current severity color */}
-                  <div style={{ 
-                    marginTop: '8px',
-                    padding: '8px',
-                    borderRadius: '4px',
-                    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                    display: 'flex',
-                    alignItems: 'center'
-                  }}>
-                    <span>Current danger zone color: </span>
-                    <div style={{
-                      width: '20px',
-                      height: '20px',
-                      borderRadius: '50%',
-                      backgroundColor: getCircleColor(newRedZone.severity),
-                      marginLeft: '10px',
-                      border: '2px solid white'
-                    }}></div>
-                    <span style={{ 
-                      marginLeft: '10px',
-                      fontWeight: '500',
-                      textTransform: 'capitalize'
-                    }}>
-                      {newRedZone.severity}
-                    </span>
-                  </div>
                 </div>
                 
-                {/* Image Upload Section */}
-                <div className="form-group">
-                  <label htmlFor="image">Upload Image (optional):</label>
-                  <input
-                    type="file"
-                    id="image"
-                    accept="image/*"
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files[0]) {
-                        setRedZoneImage(e.target.files[0])
-                      }
-                    }}
-                  />
-                  <p style={{ fontSize: '0.8rem', color: 'rgba(255, 255, 255, 0.7)', marginTop: '5px' }}>
-                    Upload an image to provide visual context for the RedZone (optional)
-                  </p>
-                </div>
-                
-                {/* Removed individual submit button */}
+                <button type="submit" className="btn btn-primary">
+                  Add RedZone
+                </button>
               </form>
             </div>
             
             {/* Map-based creation */}
-            <div className="map-create-content">
-              <h3>Create RedZone on Map</h3>
-              <p>Click on the map to select a location for the new RedZone</p>
+            <div className="map-create-content" style={{
+              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              borderRadius: '8px',
+              padding: '20px',
+              color: 'white'
+            }}>
+              <h3 style={{ color: 'white', marginBottom: '10px' }}>Create RedZone on Map</h3>
+              <p style={{ color: 'rgba(255, 255, 255, 0.8)', marginBottom: '20px' }}>Click on the map to select a location for the new RedZone</p>
               
-              <div className="map-controls">
+              <div className="map-controls" style={{ marginBottom: '20px' }}>
                 <button 
                   className={`btn ${mapMode === 'view' ? 'btn-secondary' : 'btn-ghost'}`}
                   onClick={() => {
                     setMapMode('view')
                     setSelectedCoords(null)
+                    setShowCreateForm(false)
                   }}
                 >
                   👁️ View Mode
@@ -1363,13 +1541,26 @@ export default function Admin({ onLogout }) {
                   ➕ Create Mode
                 </button>
                 {selectedCoords && (
-                  <span className="selected-coords">
+                  <span className="selected-coords" style={{
+                    color: '#60a5fa',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    marginLeft: '15px'
+                  }}>
                     Selected: {selectedCoords.lat.toFixed(6)}, {selectedCoords.lng.toFixed(6)}
                   </span>
                 )}
               </div>
 
-              <div className="map-create-container">
+              <div className="map-create-container" style={{ 
+                height: '400px', 
+                width: '100%', 
+                border: '2px solid rgba(255, 255, 255, 0.2)', 
+                borderRadius: '8px',
+                overflow: 'hidden',
+                marginBottom: '20px',
+                backgroundColor: 'rgba(0, 0, 0, 0.3)'
+              }}>
                 <MapContainer
                   center={[MAP_CONFIG.defaultCenter.lat, MAP_CONFIG.defaultCenter.lng]}
                   zoom={MAP_CONFIG.defaultZoom}
@@ -1413,14 +1604,14 @@ export default function Admin({ onLogout }) {
                     ))
                   }
                   
-                  {/* Show selected location as a circle with dynamic color based on severity */}
+                  {/* Show selected location as a circle */}
                   {selectedCoords && (
                     <Circle
                       center={[selectedCoords.lat, selectedCoords.lng]}
                       radius={500}
                       pathOptions={{
-                        color: getCircleColor(newRedZone.severity),
-                        fillColor: getCircleColor(newRedZone.severity),
+                        color: getCircleColor(mapRedZone.severity),
+                        fillColor: getCircleColor(mapRedZone.severity),
                         fillOpacity: 0.5,
                         weight: 3,
                         dashArray: '10, 10' // Dashed border to indicate it's being created
@@ -1431,194 +1622,129 @@ export default function Admin({ onLogout }) {
               </div>
 
               {/* Instructions */}
-              <div className={`instructions ${mapMode === 'create' ? 'create-mode' : ''}`}>
+              <div className="instructions" style={{ 
+                backgroundColor: mapMode === 'create' ? 'rgba(33, 150, 243, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                padding: '15px',
+                borderRadius: '8px',
+                marginBottom: '20px',
+                border: mapMode === 'create' ? '2px solid #2196f3' : '1px solid rgba(255, 255, 255, 0.2)'
+              }}>
                 {mapMode === 'view' ? (
-                  <p style={{ margin: 0 }}>
+                  <p style={{ margin: 0, color: 'rgba(255, 255, 255, 0.8)' }}>
                     👁️ <strong>View Mode:</strong> You can see existing RedZones on the map. Switch to Create Mode to add new ones.
                   </p>
                 ) : (
-                  <p style={{ margin: 0 }}>
+                  <p style={{ margin: 0, color: '#60a5fa' }}>
                     ➕ <strong>Create Mode:</strong> Click anywhere on the map to select a location for your new RedZone. A red circle will appear showing the danger area.
                   </p>
                 )}
               </div>
 
-              {/* Show form button when coordinates are selected */}
-              {/* Removed "Add RedZone at Selected Location" button as per user request */}
-
               {/* Creation Form */}
-              {/* Removed separate map creation form as per user request */}
-
-              {/* Single Add RedZone button at the bottom of the page */}
-              <div className="bottom-add-button">
-                <button 
-                  onClick={async () => {
-                    // Check if we're creating via map or form
-                    if (mapMode === 'create' && selectedCoords) {
-                      // Handle map-based creation using main form data
-                      if (!newRedZone.title || !newRedZone.description || !newRedZone.location) {
-                        alert('Please fill in all required fields in the main form');
-                        return;
-                      }
-                      
-                      try {
-                        const token = localStorage.getItem('token');
-                        if (!token) {
-                          setError('No authentication token found');
-                          return;
-                        }
-
-                        // Create FormData for file upload
-                        const formData = new FormData();
-                        formData.append('title', newRedZone.title);
-                        formData.append('description', newRedZone.description);
-                        formData.append('location', `${selectedCoords.lat.toFixed(6)}, ${selectedCoords.lng.toFixed(6)}`);
-                        formData.append('severity', newRedZone.severity); // Use main form severity
-                        formData.append('status', 'approved'); // Admin-created zones are auto-approved
-                        
-                        // Add coordinates as a JSON string
-                        formData.append('coordinates', JSON.stringify({
-                          lat: selectedCoords.lat,
-                          lng: selectedCoords.lng
-                        }));
-                        
-                        if (redZoneImage) {
-                          formData.append('image', redZoneImage);
-                        }
-
-                        const response = await fetch(API_ENDPOINTS.REDZONES_CREATE, {
-                          method: 'POST',
-                          headers: {
-                            'Authorization': `Bearer ${token}`
-                          },
-                          body: formData
-                        });
-
-                        if (!response.ok) {
-                          const errorBody = await response.text();
-                          throw new Error(`HTTP error! status: ${response.status}, message: ${errorBody}`);
-                        }
-
-                        const result = await response.json();
-
-                        // Reset form and map state
-                        setNewRedZone({
-                          title: '',
-                          description: '',
-                          location: '',
-                          severity: 'medium'
-                        });
-                        setRedZoneImage(null);
-                        setSelectedCoords(null);
-                        setMapMode('view');
-
-                        // Refresh the red zones list to show the new zone immediately
-                        await fetchRedZones();
-
-                        // Also add the new zone to current state for immediate visibility
-                        const newZoneForState = {
-                          _id: result.redZone._id,
-                          title: result.redZone.title,
-                          description: result.redZone.description,
-                          location: result.redZone.location,
-                          severity: result.redZone.severity,
-                          status: result.redZone.status,
-                          coordinates: result.redZone.coordinates,
-                          createdAt: result.redZone.createdAt,
-                          reportedBy: result.redZone.reportedBy
-                        };
-                        
-                        // Add to current state for immediate display
-                        setRedZones(prevRedZones => [newZoneForState, ...prevRedZones]);
-
-                        alert('Red Zone created successfully and is now visible to all users!');
-                        console.log('New red zone created with coordinates:', result.redZone.coordinates);
-                      } catch (err) {
-                        console.error('Error creating map-based RedZone:', err.message || err);
-                        setError(`Failed to create RedZone: ${err.message || 'Unknown error'}`);
-                      }
-                    } else if (!selectedCoords) {
-                      // Handle form-based creation
-                      if (!newRedZone.title || !newRedZone.description || !newRedZone.location) {
-                        alert('Please fill in all required fields');
-                        return;
-                      }
-                      
-                      try {
-                        const token = localStorage.getItem('token');
-                        if (!token) {
-                          setError('No authentication token found');
-                          return;
-                        }
-
-                        // Create FormData for file upload
-                        const formData = new FormData();
-                        formData.append('title', newRedZone.title);
-                        formData.append('description', newRedZone.description);
-                        formData.append('location', newRedZone.location);
-                        formData.append('severity', newRedZone.severity);
-                        formData.append('status', 'approved'); // Admin-created zones are auto-approved
-                        
-                        if (redZoneImage) {
-                          formData.append('image', redZoneImage);
-                        }
-
-                        const response = await fetch(API_ENDPOINTS.REDZONES_CREATE, {
-                          method: 'POST',
-                          headers: {
-                            'Authorization': `Bearer ${token}`
-                          },
-                          body: formData
-                        });
-
-                        if (!response.ok) {
-                          const errorBody = await response.text();
-                          throw new Error(`HTTP error! status: ${response.status}, message: ${errorBody}`);
-                        }
-
-                        const result = await response.json();
-
-                        // Reset form
-                        setNewRedZone({
-                          title: '',
-                          description: '',
-                          location: '',
-                          severity: 'medium'
-                        });
-                        setRedZoneImage(null);
-
-                        // Add the new RedZone to the list with approved status
-                        setRedZones(prevRedZones => [
-                          {
-                            ...result.redZone,
-                            createdAt: new Date().toISOString()
-                          },
-                          ...prevRedZones
-                        ]);
-
-                        // Show success message
-                        alert('New RedZone created successfully');
-                      } catch (err) {
-                        console.error('Error creating RedZone:', err.message || err);
-                        setError(`Failed to create RedZone: ${err.message || 'Unknown error'}`);
-                      }
-                    } else {
-                      alert('Please select a location on the map first');
-                    }
-                  }}
-                  className="btn btn-primary"
-                  disabled={mapMode === 'create' && !selectedCoords}
-                  style={{ 
-                    width: '100%', 
-                    maxWidth: '400px', 
-                    margin: '0 auto', 
-                    padding: '12px 24px',
-                    fontSize: '18px'
-                  }}
-                >
-                  Add RedZone
-                </button>
-              </div>
+              {showCreateForm && selectedCoords && (
+                <div className="create-form" style={{
+                  backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                  border: '2px solid #2196f3',
+                  borderRadius: '8px',
+                  padding: '20px',
+                  marginBottom: '20px'
+                }}>
+                  <h3 style={{ marginTop: 0, color: '#60a5fa' }}>Create RedZone at Selected Location</h3>
+                  <form onSubmit={handleCreateMapRedZone}>
+                    <div className="form-group">
+                      <label htmlFor="map-title">Title:</label>
+                      <input
+                        type="text"
+                        id="map-title"
+                        value={mapRedZone.title}
+                        onChange={(e) => setMapRedZone({...mapRedZone, title: e.target.value})}
+                        required
+                        placeholder="e.g., Market Area Incident"
+                      />
+                    </div>
+                    
+                    <div className="form-group">
+                      <label htmlFor="map-description">Description:</label>
+                      <textarea
+                        id="map-description"
+                        value={mapRedZone.description}
+                        onChange={(e) => setMapRedZone({...mapRedZone, description: e.target.value})}
+                        required
+                        placeholder="Describe the danger in detail"
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          borderRadius: '4px',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                          color: 'white',
+                          minHeight: '80px'
+                        }}
+                      />
+                    </div>
+                    
+                    <div className="form-group">
+                      <label htmlFor="map-severity">Severity Level:</label>
+                      <select
+                        id="map-severity"
+                        value={mapRedZone.severity}
+                        onChange={(e) => setMapRedZone({...mapRedZone, severity: e.target.value})}
+                        required
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          borderRadius: '4px',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                          color: 'white'
+                        }}
+                      >
+                        <option value="low">Low - Caution advised</option>
+                        <option value="medium">Medium - Potential danger</option>
+                        <option value="high">High - Immediate danger</option>
+                      </select>
+                    </div>
+                    
+                    <div className="form-actions" style={{ 
+                      display: 'flex', 
+                      gap: '10px', 
+                      justifyContent: 'flex-end',
+                      marginTop: '20px'
+                    }}>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setShowCreateForm(false)
+                          setMapRedZone({
+                            title: '',
+                            description: '',
+                            severity: 'medium',
+                            coordinates: null
+                          })
+                        }}
+                        className="btn btn-ghost"
+                        style={{ color: 'white' }}
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        type="submit" 
+                        className="btn btn-primary"
+                        style={{ 
+                          backgroundColor: '#3498db',
+                          color: 'white',
+                          border: 'none',
+                          padding: '10px 20px',
+                          borderRadius: '4px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Create RedZone
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
             </div>
           </div>
         )}

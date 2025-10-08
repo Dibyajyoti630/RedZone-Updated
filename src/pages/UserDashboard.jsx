@@ -53,14 +53,21 @@ function UserDashboard({ user, onLogout }) {
       setLoadingContact(true)
       const token = localStorage.getItem('token')
       
+      // Add better error handling and logging
+      console.log('Fetching user contact with token:', token ? 'Token present' : 'No token')
+      
       const response = await fetch(API_ENDPOINTS.USER_CONTACT_ME, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       })
       
-      if (response.ok) {
+      console.log('User contact response:', response.status, response.statusText)
+      
+      // Handle both successful responses and 404 (which is expected when no contact exists)
+      if (response.ok || response.status === 404) {
         const data = await response.json()
+        console.log('User contact data:', data)
         if (data.exists) {
           setContactExists(true)
           setNotifyFormData({
@@ -71,6 +78,7 @@ function UserDashboard({ user, onLogout }) {
           setContactExists(false)
         }
       } else {
+        console.error('Failed to fetch user contact:', response.status, await response.text())
         setContactExists(false)
       }
     } catch (error) {
@@ -331,10 +339,10 @@ function UserDashboard({ user, onLogout }) {
                   {redZone.imageUrl && (
                     <div className="redzone-image" style={{ marginTop: '8px', marginBottom: '8px' }}>
                       <img 
-                        src={`${API_BASE_URL}${redZone.imageUrl}`} 
+                        src={`${API_BASE_URL}${redZone.imageUrl.startsWith('/') ? '' : '/'}${redZone.imageUrl}`} 
                         alt="RedZone" 
                         style={{ maxWidth: '100%', maxHeight: '150px', borderRadius: '4px', cursor: 'pointer' }}
-                        onClick={() => window.open(`${API_BASE_URL}${redZone.imageUrl}`, '_blank')}
+                        onClick={() => window.open(`${API_BASE_URL}${redZone.imageUrl.startsWith('/') ? '' : '/'}${redZone.imageUrl}`, '_blank')}
                       />
                     </div>
                   )}

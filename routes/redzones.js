@@ -13,7 +13,7 @@ import { sendRedZoneEmailNotification, sendEmail, testEmailSending } from '../ut
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadDir = 'server/uploads/redzones'
+    const uploadDir = 'uploads/redzones'
     // Create directory if it doesn't exist
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true })
@@ -251,7 +251,8 @@ router.post('/', auth, upload.single('image'), async (req, res) => {
     }
 
     // Get image URL if an image was uploaded
-    const imageUrl = req.file ? `/${req.file.path.replace(/\\/g, '/')}` : null
+    // Store only the relative path for web access, not the full file system path
+    const imageUrl = req.file ? `/uploads/redzones/${req.file.filename}` : null
 
     // Create new RedZone document
     const newRedZone = new RedZone({
@@ -285,7 +286,7 @@ router.post('/', auth, upload.single('image'), async (req, res) => {
         title: title,
         location: location,
         date: new Date(),
-        imageUrl: imageUrl,
+        imageUrl: imageUrl, // This will now be the correct relative path
         redZoneId: newRedZone._id,
         uploadedBy: req.user.id
       })
@@ -380,98 +381,6 @@ router.get('/', auth, async (req, res) => {
   }
 })
 
-// REMOVE THIS PLACEHOLDER IMPLEMENTATION
-// PUT /api/redzones/:id/approve - Approve a RedZone (admin only)
-router.put('/:id/approve', auth, async (req, res) => {
-  try {
-    // Check if user is admin
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied. Admin privileges required.'
-      })
-    }
-
-    const { id } = req.params
-
-    // Find the RedZone by ID and update its status to 'approved'
-    const redZone = await RedZone.findById(id)
-    
-    if (!redZone) {
-      return res.status(404).json({
-        success: false,
-        message: 'RedZone not found'
-      })
-    }
-    
-    // Update the RedZone status and add reviewer information
-    redZone.status = 'approved'
-    redZone.reviewedBy = req.user.id
-    redZone.reviewedAt = new Date()
-    redZone.updatedAt = new Date()
-    
-    await redZone.save()
-    
-    res.json({
-      success: true,
-      message: 'RedZone approved successfully',
-      redZone
-    })
-  } catch (error) {
-    console.error('Error approving RedZone:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Failed to approve RedZone'
-    })
-  }
-})
-
-// PUT /api/redzones/:id/reject - Reject a RedZone (admin only)
-router.put('/:id/reject', auth, async (req, res) => {
-  try {
-    // Check if user is admin
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied. Admin privileges required.'
-      })
-    }
-
-    const { id } = req.params
-
-    // Find the RedZone by ID and update its status to 'rejected'
-    const redZone = await RedZone.findById(id)
-    
-    if (!redZone) {
-      return res.status(404).json({
-        success: false,
-        message: 'RedZone not found'
-      })
-    }
-    
-    // Update the RedZone status and add reviewer information
-    redZone.status = 'rejected'
-    redZone.reviewedBy = req.user.id
-    redZone.reviewedAt = new Date()
-    redZone.updatedAt = new Date()
-    
-    await redZone.save()
-    
-    res.json({
-      success: true,
-      message: 'RedZone rejected successfully',
-      redZone
-    })
-  } catch (error) {
-    console.error('Error rejecting RedZone:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Failed to reject RedZone'
-    })
-  }
-})
-
-// KEEP THIS ACTUAL IMPLEMENTATION
 // PUT /api/redzones/:id/approve - Approve a RedZone report (admin only)
 router.put('/:id/approve', auth, async (req, res) => {
   try {

@@ -49,6 +49,8 @@ app.use(express.urlencoded({ extended: true }))
 
 // Serve static files from uploads directory
 app.use('/uploads', express.static('uploads'))
+// Also serve files from server uploads directory
+app.use('/server/uploads', express.static('server/uploads'))
 
 // Database connection 
 const connectDB = async () => {

@@ -9,8 +9,8 @@ const getApiBaseUrl = () => {
     return envUrl
   }
   
-  // Fallback to localhost for development
-  const fallbackUrl = 'http://localhost:5004'
+  // Fallback to localhost for development - using port 5005 to match backend
+  const fallbackUrl = 'http://localhost:5005'
   console.log('Using fallback API URL:', fallbackUrl)
   return fallbackUrl
 }
@@ -75,6 +75,12 @@ export const apiCall = async (endpoint, options = {}) => {
   })
 
   console.log('Response status:', response.status, response.statusText)
+
+  // Handle 404 specifically for user contact endpoint
+  if (response.status === 404 && endpoint.includes('/user-contacts/me')) {
+    console.log('User contact not found, returning default response')
+    return { exists: false }
+  }
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
