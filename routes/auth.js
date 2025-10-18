@@ -10,7 +10,16 @@ const generateToken = (userId) => {
   return jwt.sign(
     { userId },
     process.env.JWT_SECRET || 'your-secret-key',
-    { expiresIn: '7d' }
+    { expiresIn: '30d' } // Extended to 30 days
+  )
+}
+
+// Refresh JWT Token
+const generateRefreshToken = (userId) => {
+  return jwt.sign(
+    { userId },
+    process.env.JWT_SECRET || 'your-secret-key',
+    { expiresIn: '60d' } // Extended to 60 days
   )
 }
 
@@ -171,11 +180,63 @@ router.get('/me', async (req, res) => {
 
   } catch (error) {
     console.error('Get current user error:', error)
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ 
+        message: 'Token has expired',
+        expired: true 
+      })
+    }
     if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({ message: 'Invalid token' })
     }
     res.status(500).json({ 
       message: 'Error fetching user data',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    })
+  }
+})
+
+// Refresh Token
+router.post('/refresh-token', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '')
+    
+    if (!token) {
+      return res.status(401).json({ message: 'No token provided' })
+    }
+
+    // Verify the expired token to get user info
+    const decoded = jwt.decode(token)
+    
+    if (!decoded || !decoded.userId) {
+      return res.status(401).json({ message: 'Invalid token' })
+    }
+
+    // Check if user exists
+    const user = await User.findById(decoded.userId)
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' })
+    }
+
+    if (!user.isActive) {
+      return res.status(401).json({ message: 'Account is deactivated' })
+    }
+
+    // Generate new token
+    const newToken = generateToken(user._id)
+
+    res.json({
+      message: 'Token refreshed successfully',
+      token: newToken
+    })
+
+  } catch (error) {
+    console.error('Token refresh error:', error)
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: 'Token has expired' })
+    }
+    res.status(500).json({ 
+      message: 'Error refreshing token',
       error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     })
   }

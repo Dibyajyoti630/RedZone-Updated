@@ -1618,7 +1618,95 @@ body {
   border-radius: 12px;
 }
 
+/* Leaflet Popup Styles - Black Transparent Blur */
+.leaflet-popup-content-wrapper {
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  color: white;
+}
 
+.leaflet-popup-content {
+  margin: 16px;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  color: #f8fafc;
+}
+
+.leaflet-popup-content h3 {
+  margin: 0 0 8px 0;
+  color: #f8fafc;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.leaflet-popup-content p {
+  margin: 4px 0;
+  color: #e2e8f0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.leaflet-popup-content strong {
+  color: #f8fafc;
+  font-weight: 600;
+}
+
+.leaflet-popup-content small {
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+
+.leaflet-popup-tip {
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.leaflet-popup-close-button {
+  color: #94a3b8;
+  font-size: 18px;
+  padding: 4px;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.leaflet-popup-close-button:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+/* Info Window Styles (for consistency) */
+.info-window {
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+}
+
+.info-window h3 {
+  margin: 0 0 8px 0;
+  color: #f8fafc;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.info-window p {
+  margin: 4px 0;
+  color: #e2e8f0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.info-window strong {
+  color: #f8fafc;
+  font-weight: 600;
+}
+
+.info-window small {
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
 
 .map-loading-spinner p {
   margin: 0;
@@ -1751,35 +1839,6 @@ body {
   100% {
     box-shadow: 0 2px 4px rgba(0,0,0,0.3);
   }
-}
-
-/* Info Window Styles */
-.info-window {
-  font-family: Inter, system-ui, -apple-system, sans-serif;
-}
-
-.info-window h3 {
-  margin: 0 0 8px 0;
-  color: var(--text-900);
-  font-size: 1.1rem;
-  font-weight: 600;
-}
-
-.info-window p {
-  margin: 4px 0;
-  color: var(--text-700);
-  font-size: 0.9rem;
-  line-height: 1.4;
-}
-
-.info-window strong {
-  color: var(--text-900);
-  font-weight: 600;
-}
-
-.info-window small {
-  color: var(--text-500);
-  font-size: 0.8rem;
 }
 
 /* Map Attribution */

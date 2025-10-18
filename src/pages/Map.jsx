@@ -4,7 +4,7 @@ import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-le
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { MAP_CONFIG } from '../config/maps.js'
-import { API_ENDPOINTS } from '../config/api.js'
+import { API_ENDPOINTS, API_BASE_URL } from '../config/api.js'
 
 // Fix for default markers in Leaflet
 delete L.Icon.Default.prototype._getIconUrl
@@ -72,6 +72,9 @@ function MapUpdater({ center, zoom, shouldCenterOnUser }) {
 }
 
 function Map() {
+  // Debug API_BASE_URL
+  console.log('API_BASE_URL:', API_BASE_URL);
+  
   // Mock notifications
   const mockNotifications = [
     {
@@ -118,8 +121,63 @@ function Map() {
     
     return true
   }, [])
-  const [userLocation, setUserLocation] = useState(null)
-  const [locationEnabled, setLocationEnabled] = useState(false)
+  
+  // Move the checkCurrentStatus function declaration here, before any references to it
+  const checkCurrentStatus = (lat, lng) => {
+    console.log('Checking current status for location:', { lat, lng });
+    console.log('RedZones available:', redZones.length);
+    
+    // Calculate distance to nearest RedZone
+    const { distance: nearestDistance, zone: nearestZone } = getNearestRedZoneInfo(lat, lng);
+    console.log('Nearest RedZone distance:', nearestDistance, 'zone:', nearestZone);
+
+    // Check if user is inside any RedZone (within 200m radius)
+    let insideRedZone = false;
+    let insideRedZoneSeverity = 'low';
+    
+    redZones.forEach((zone, index) => {
+      const distance = calculateDistance(lat, lng, zone.position.lat, zone.position.lng);
+      console.log(`Distance to zone ${index} (${zone.id}): ${distance} km`);
+      
+      // RedZone radius is 200m = 0.2km
+      if (distance < 0.2) {
+        insideRedZone = true;
+        console.log('User is inside RedZone:', zone.id);
+        
+        // Use the highest severity if inside multiple zones
+        if (zone.severity === 'high' || (zone.severity === 'medium' && insideRedZoneSeverity !== 'high') || insideRedZoneSeverity === 'low') {
+          insideRedZoneSeverity = zone.severity;
+          console.log('Updated severity to:', insideRedZoneSeverity);
+        }
+      }
+    });
+
+    console.log('Inside RedZone:', insideRedZone, 'Severity:', insideRedZoneSeverity);
+    console.log('Nearest distance:', nearestDistance);
+
+    // Set status based on whether user is inside a RedZone or distance to nearest RedZone
+    let newStatus;
+    if (insideRedZone) {
+      // Show danger for high severity zones, warning for medium/low
+      newStatus = insideRedZoneSeverity === 'high' ? 'danger' : 'warning';
+      console.log('Setting status to:', newStatus, '(inside RedZone)');
+    } else if (nearestDistance < 0.5) { // Within 0.5 km
+      newStatus = nearestZone?.severity === 'high' ? 'danger' : 'warning';
+      console.log('Setting status to:', newStatus, '(near RedZone)');
+    } else if (nearestDistance < 2) { // Within 2 km
+      newStatus = 'warning';
+      console.log('Setting status to:', newStatus, '(close to RedZone)');
+    } else {
+      newStatus = 'safe';
+      console.log('Setting status to:', newStatus, '(safe area)');
+    }
+    
+    setCurrentStatus(newStatus);
+    console.log('Status updated to:', newStatus);
+  }
+
+  const [userLocation, setUserLocation] = useState({ lat: 19.048359, lng: 83.831714 }) // Set your specific location
+  const [locationEnabled, setLocationEnabled] = useState(true) // Set to true to show location by default
   const [redZones, setRedZones] = useState([])
   const [currentStatus, setCurrentStatus] = useState('safe')
   const [notifications, setNotifications] = useState([])
@@ -127,12 +185,76 @@ function Map() {
   const [locationLoading, setLocationLoading] = useState(false)
   const [mapLoading, setMapLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [shouldCenterOnUser, setShouldCenterOnUser] = useState(false)
+  const [shouldCenterOnUser, setShouldCenterOnUser] = useState(true) // Set to true to center on your location
   const [locationAccuracy, setLocationAccuracy] = useState(null)
   const [isMobile, setIsMobile] = useState(false)
   const [mobilePermissionStatus, setMobilePermissionStatus] = useState(null)
   const mapRef = useRef(null)
   const watchIdRef = useRef(null)
+  // Add a ref for redZones to avoid dependency issues
+  const redZonesRef = useRef(redZones);
+  // Add a ref for checkCurrentStatus function to avoid dependency issues
+  // Initialize with null and update in useEffect to avoid temporal dead zone
+  const checkCurrentStatusRef = useRef(null);
+  
+  // Update the ref when checkCurrentStatus changes
+  useEffect(() => {
+    checkCurrentStatusRef.current = checkCurrentStatus;
+  }, [checkCurrentStatus]);
+  
+  // Update the ref when redZones change
+  useEffect(() => {
+    redZonesRef.current = redZones;
+  }, [redZones]);
+
+  // Function to start watching for location changes
+  const startLocationWatching = useCallback(() => {
+    console.log('startLocationWatching called');
+    if (navigator.geolocation) {
+      const watchOptions = {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 10000,
+        forceRequest: true
+      }
+      
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        (position) => {
+          const { latitude, longitude, accuracy } = position.coords
+          console.log('Location updated:', { latitude, longitude, accuracy });
+          
+          const newLocation = { lat: latitude, lng: longitude }
+          setUserLocation(newLocation)
+          setLocationAccuracy(accuracy)
+          if (checkCurrentStatusRef.current) {
+            checkCurrentStatusRef.current(latitude, longitude)
+          }
+          
+          // Check if user has entered a RedZone and trigger alert if needed
+          checkAndTriggerRedZoneAlertWithZones(latitude, longitude, newLocation, redZonesRef.current);
+        },
+        (error) => {
+          console.error('Location watching error:', error);
+          // Don't stop watching, but log the error
+          // More detailed error handling
+          switch(error.code) {
+            case error.PERMISSION_DENIED:
+              console.log('Location permission denied during watching. User may have revoked permissions.');
+              break;
+            case error.POSITION_UNAVAILABLE:
+              console.log('Location unavailable during watching. Temporary issue with GPS or network.');
+              break;
+            case error.TIMEOUT:
+              console.log('Location watch timeout. Will retry on next position update.');
+              break;
+            default:
+              console.log(`Unknown location watching error (Code: ${error.code}). Continuing to watch.`);
+          }
+        },
+        watchOptions
+      )
+    }
+  }, [])
 
   // Detect mobile device
   useEffect(() => {
@@ -227,6 +349,14 @@ function Map() {
   useEffect(() => {
     const loadInitialData = async () => {
       try {
+        // Set your specific location immediately
+        setUserLocation({ lat: 19.048359, lng: 83.831714 });
+        setLocationEnabled(true);
+        setShouldCenterOnUser(true);
+        if (checkCurrentStatusRef.current) {
+          checkCurrentStatusRef.current(19.048359, 83.831714);
+        }
+        
         // Check geolocation support first
         checkGeolocationSupport()
         
@@ -244,50 +374,82 @@ function Map() {
             
             if (response.ok) {
               const data = await response.json()
+              console.log('RedZones API response:', data);
+              
               // Transform API data to match our format (already filtered for approved zones)
               const transformedRedZones = data.redZones
-                .filter(zone => zone.status === 'approved') // Extra safety filter
-                .map(zone => ({
-                  id: zone._id,
-                  name: zone.title,
-                  position: zone.coordinates && zone.coordinates.lat && zone.coordinates.lng 
-                    ? { lat: zone.coordinates.lat, lng: zone.coordinates.lng }
-                    : { lat: 19.0769, lng: 83.7603 }, // Fallback coordinates if not set
-                  severity: zone.severity,
-                  description: zone.description,
-                  timestamp: zone.createdAt,
-                  imageUrl: zone.imageUrl || null,
-                  status: zone.status // Keep status for debugging
-                }))
-              setRedZones(transformedRedZones)
+                .filter(zone => {
+                  // Filter for approved zones and validate required data
+                  const isValid = zone.status === 'approved' && 
+                                 zone.coordinates && 
+                                 zone.coordinates.lat && 
+                                 zone.coordinates.lng;
+                  return isValid;
+                })
+                .map(zone => {
+                  // Validate and transform zone data
+                  const transformedZone = {
+                    id: zone._id,
+                    name: zone.title || 'Unnamed RedZone',
+                    position: {
+                      lat: parseFloat(zone.coordinates.lat),
+                      lng: parseFloat(zone.coordinates.lng)
+                    },
+                    severity: zone.severity || 'low',
+                    description: zone.description || 'No description provided',
+                    timestamp: zone.createdAt,
+                    imageUrl: zone.imageUrl || null,
+                    status: zone.status
+                  };
+                  
+                  console.log('Transformed RedZone:', transformedZone);
+                  return transformedZone;
+                });
+              
+              console.log('Final transformed RedZones:', transformedRedZones);
+              setRedZones(transformedRedZones);
+              
+              // Re-check status after loading RedZones
+              if (userLocation && checkCurrentStatusRef.current) {
+                checkCurrentStatusRef.current(userLocation.lat, userLocation.lng);
+              }
             } else {
-              setRedZones([])
+              console.log('Failed to fetch RedZones, setting empty array');
+              setRedZones([]);
             }
           } catch (apiError) {
-            setRedZones([])
+            console.error('Error fetching RedZones:', apiError);
+            setRedZones([]);
           }
         } else {
-          setRedZones([])
+          console.log('No token found, setting empty RedZones array');
+          setRedZones([]);
         }
         
         // Set mock notifications (you can replace this with API call later)
-        setNotifications(mockNotifications)
-        setLoading(false)
+        setNotifications(mockNotifications);
+        setLoading(false);
       } catch (error) {
-        setRedZones([])
-        setLoading(false)
+        console.error('Error in loadInitialData:', error);
+        setRedZones([]);
+        setLoading(false);
       }
     }
     
-    loadInitialData()
-  }, [checkGeolocationSupport])
+    loadInitialData();
+  }, [checkGeolocationSupport]); // Remove userLocation from dependencies to prevent continuous fetching
 
   // Function to refresh red zones from API
   const refreshRedZones = useCallback(async () => {
+    console.log('refreshRedZones called');
     const token = localStorage.getItem('token')
-    if (!token) return
+    if (!token) {
+      console.log('No token found, skipping refresh');
+      return;
+    }
     
     try {
+      console.log('Fetching RedZones from API...');
       const response = await fetch(API_ENDPOINTS.REDZONES_APPROVED, {
         method: 'GET',
         headers: {
@@ -298,32 +460,79 @@ function Map() {
       
       if (response.ok) {
         const data = await response.json()
+        console.log('RedZones API response:', data);
+        
         const transformedRedZones = data.redZones
           .filter(zone => zone.status === 'approved') // Extra safety filter
           .map(zone => ({
             id: zone._id,
-            name: zone.title,
+            name: zone.title || 'Unnamed RedZone', // Add fallback for name
             position: zone.coordinates && zone.coordinates.lat && zone.coordinates.lng 
-              ? { lat: zone.coordinates.lat, lng: zone.coordinates.lng }
+              ? { lat: parseFloat(zone.coordinates.lat), lng: parseFloat(zone.coordinates.lng) }
               : { lat: 19.0769, lng: 83.7603 },
-            severity: zone.severity,
-            description: zone.description,
+            severity: zone.severity || 'low', // Add fallback for severity
+            description: zone.description || 'No description provided', // Add fallback for description
             timestamp: zone.createdAt,
             imageUrl: zone.imageUrl || null,
             status: zone.status // Keep status for debugging
           }))
-        setRedZones(transformedRedZones)
+        
+        console.log('Transformed RedZones:', transformedRedZones);
+        
+        setRedZones(prevZones => {
+          // Only update if the new data is different to prevent unnecessary re-renders
+          const newZoneIds = new Set(transformedRedZones.map(z => z.id));
+          const oldZoneIds = new Set(prevZones.map(z => z.id));
+          
+          // Check if zones are the same
+          if (newZoneIds.size === oldZoneIds.size && 
+              [...newZoneIds].every(id => oldZoneIds.has(id))) {
+            console.log('RedZones unchanged, skipping update');
+            return prevZones; // No change, return previous zones
+          }
+          
+          console.log('RedZones updated, setting new zones');
+          return transformedRedZones;
+        });
+      } else {
+        console.log('Failed to fetch RedZones, status:', response.status);
       }
     } catch (error) {
+      console.error('Error refreshing RedZones:', error);
       // Silently handle refresh errors
     }
   }, [])
 
-  // Set up periodic refresh for red zones (every 30 seconds)
+  // Set up periodic refresh for red zones (every 60 seconds instead of 30)
   useEffect(() => {
-    const interval = setInterval(refreshRedZones, 30000) // 30 seconds
-    return () => clearInterval(interval)
+    console.log('Setting up periodic RedZone refresh (every 60 seconds)');
+    const interval = setInterval(() => {
+      console.log('Refreshing RedZones...');
+      refreshRedZones();
+    }, 60000); // 60 seconds instead of 30
+    return () => {
+      console.log('Clearing RedZone refresh interval');
+      clearInterval(interval);
+    }
   }, [refreshRedZones])
+
+  // Start location watching when location is enabled and redZones are loaded
+  useEffect(() => {
+    console.log('Location watching effect triggered:', { locationEnabled, redZonesLength: redZones.length, watchIdExists: !!watchIdRef.current });
+    if (locationEnabled && redZones.length > 0 && !watchIdRef.current) {
+      console.log('Starting location watching...');
+      startLocationWatching();
+    }
+    
+    // Cleanup function
+    return () => {
+      if (watchIdRef.current) {
+        console.log('Cleaning up location watching...');
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+    }
+  }, [locationEnabled, redZones.length, startLocationWatching])
 
   // Cleanup location watcher on unmount
   useEffect(() => {
@@ -335,9 +544,22 @@ function Map() {
   }, [])
 
   const enableLocation = useCallback(() => {
+    console.log('Enabling location...');
+    
     if (navigator.geolocation) {
       setLocationLoading(true)
       setError(null)
+      
+      // Request vibration permission if needed (for some browsers)
+      if ('vibrate' in navigator) {
+        // Try to trigger a small vibration to request permission
+        try {
+          navigator.vibrate(1);
+          setTimeout(() => navigator.vibrate(0), 100);
+        } catch (e) {
+          console.log('Could not request vibration permission:', e);
+        }
+      }
       
       // Add a safety timeout to prevent infinite loading
       const safetyTimeout = setTimeout(() => {
@@ -382,6 +604,7 @@ function Map() {
       // First get current position
       navigator.geolocation.getCurrentPosition(
         (position) => {
+          console.log('Location acquired:', position);
           clearTimeout(safetyTimeout) // Clear the safety timeout
           const { latitude, longitude, accuracy, altitude, heading, speed } = position.coords
           const timestamp = position.timestamp
@@ -391,51 +614,38 @@ function Map() {
           setLocationAccuracy(accuracy)
           setLocationEnabled(true)
           setShouldCenterOnUser(true)
-          checkCurrentStatus(latitude, longitude)
+          if (checkCurrentStatusRef.current) {
+            checkCurrentStatusRef.current(latitude, longitude)
+          }
+          
+          // Check if user has entered a RedZone and trigger alert
+          console.log('Checking for RedZone entry after location update...');
+          checkAndTriggerRedZoneAlertWithZones(latitude, longitude, newLocation, redZones);
+          
           setLocationLoading(false)
           
           // Start watching for location changes with better options
           startLocationWatching()
         },
         (error) => {
+          console.error('Location error:', error);
           clearTimeout(safetyTimeout)
           
           let errorMessage = 'Unable to get your location. Please check your browser settings.'
           
-          if (isMobile) {
-            // Mobile-specific error messages
-            switch(error.code) {
-              case error.PERMISSION_DENIED:
-                errorMessage = '❌ Mobile Location Access Denied\\n\\n📱 On your phone, you need to:\\n\\n1. **Allow location access** when prompted\\n2. **Enable GPS** in your phone settings\\n3. **Check browser permissions** in phone settings\\n\\n🔧 Try these steps:\\n• Go to Phone Settings → Apps → Browser → Permissions → Location → Allow\\n• Make sure GPS is turned ON in Quick Settings\\n• Try using Chrome or Safari browser\\n• Go outside for better GPS signal'
-                break
-              case error.POSITION_UNAVAILABLE:
-                errorMessage = '❌ Mobile GPS Unavailable (Error Code 2)\\n\\n📱 This usually means:\\n\\n• GPS is OFF in your phone settings\\n• You are indoors (GPS signals weak)\\n• Phone GPS hardware issue\\n• Network location failed\\n\\n🔧 Mobile fixes:\\n• Pull down Quick Settings → Turn ON GPS/Location\\n• Go to Settings → Location → Turn ON\\n• Go outside or near a window\\n• Check if GPS works in Google Maps app\\n• Use "Manual Location" button below'
-                break
-              case error.TIMEOUT:
-                errorMessage = '❌ Mobile GPS Timeout\\n\\n📱 GPS is taking too long. Try:\\n\\n• Going outside for better GPS signal\\n• Turning GPS OFF and ON again\\n• Restarting your phone\\n• Using "Manual Location" button below'
-                break
-              default:
-                errorMessage = '❌ Mobile Location Error\\n\\n📱 Unknown error. Try:\\n\\n• Refreshing the page\\n• Using a different browser\\n• Checking phone GPS settings\\n• Using "Manual Location" button below'
-            }
-          } else {
-            // Desktop error messages
-            switch(error.code) {
-              case error.PERMISSION_DENIED:
-                errorMessage = '❌ Location access denied. Please follow these steps:\n\n1. Click the lock/info icon in your browser address bar\n2. Change "Location" from "Block" to "Allow"\n3. Refresh the page and try again\n\nIf you still see "Block", try using a different browser.'
-                break
-              case error.POSITION_UNAVAILABLE:
-                errorMessage = '❌ GPS Location Unavailable (Error Code 2). This means:\n\n• GPS is disabled on your device\n• You are indoors (GPS signals are weak)\n• Device GPS hardware is not working\n• Network-based location failed\n\n🔧 Try these fixes:\n• Go outside or near a window\n• Enable GPS in device settings\n• Check if GPS works in Google Maps\n• Use "Manual Location" button below'
-                break
-              case error.TIMEOUT:
-                errorMessage = '❌ Location request timed out. This might happen if:\n\n• GPS signal is weak\n• You are indoors\n• Device GPS is slow to respond\n\nTry moving to an open area and refreshing location.'
-                break
-              default:
-                errorMessage = `❌ Unknown location error (Code: ${error.code}). Please try:
-
-• Refreshing the page
-• Using a different browser
-• Checking if GPS works in other apps`
-            }
+          // More detailed error handling
+          switch(error.code) {
+            case error.PERMISSION_DENIED:
+              errorMessage = 'Location access denied. Please enable location permissions in your browser settings and try again.';
+              break;
+            case error.POSITION_UNAVAILABLE:
+              errorMessage = 'Location information is unavailable. Please check your device GPS or network connection and try again.';
+              break;
+            case error.TIMEOUT:
+              errorMessage = 'Location request timed out. Please try again or check your network connection.';
+              break;
+            default:
+              errorMessage = `Unknown error occurred (Code: ${error.code}). Please try again.`;
           }
           
           setError(errorMessage)
@@ -449,33 +659,52 @@ function Map() {
       setError(errorMsg)
       setLocationLoading(false)
     }
-  }, [locationLoading, isMobile, mobilePermissionStatus, checkMobilePermissions])
+  }, [locationLoading, isMobile, mobilePermissionStatus, checkMobilePermissions, startLocationWatching, redZones])
 
-  const startLocationWatching = useCallback(() => {
-    if (navigator.geolocation) {
-      const watchOptions = {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 10000,
-        forceRequest: true
-      }
+  // Function to check if user has entered a RedZone and trigger alert (without useCallback dependency issues)
+  const checkAndTriggerRedZoneAlertWithZones = (lat, lng, location, currentRedZones) => {
+    console.log('Checking for RedZone entry...', { lat, lng, redZonesCount: currentRedZones.length });
+    
+    // Get the current RedZone the user is in (if any)
+    let currentRedZone = null;
+    let currentRedZoneSeverity = 'low';
+    
+    currentRedZones.forEach(zone => {
+      const distance = calculateDistance(lat, lng, zone.position.lat, zone.position.lng);
+      console.log(`Distance to zone ${zone.id}: ${distance} km`);
       
-      watchIdRef.current = navigator.geolocation.watchPosition(
-        (position) => {
-          const { latitude, longitude, accuracy } = position.coords
-          
-          const newLocation = { lat: latitude, lng: longitude }
-          setUserLocation(newLocation)
-          setLocationAccuracy(accuracy)
-          checkCurrentStatus(latitude, longitude)
-        },
-        (error) => {
-          // Silently handle location watching errors
-        },
-        watchOptions
-      )
+      // RedZone radius is 200m = 0.2km
+      if (distance < 0.2) {
+        currentRedZone = zone;
+        // Use the highest severity if inside multiple zones
+        if (zone.severity === 'high' || (zone.severity === 'medium' && currentRedZoneSeverity !== 'high') || currentRedZoneSeverity === 'low') {
+          currentRedZoneSeverity = zone.severity;
+        }
+        console.log('User is inside RedZone:', zone);
+      }
+    });
+    
+    // Check if we have a RedZone and if it's different from the previously alerted one
+    if (currentRedZone) {
+      const previouslyAlertedZoneId = localStorage.getItem('lastAlertedRedZoneId');
+      console.log('Previously alerted zone ID:', previouslyAlertedZoneId);
+      console.log('Current zone ID:', currentRedZone.id);
+      
+      // Only trigger alert if it's a new RedZone or if enough time has passed (to avoid spam)
+      if (previouslyAlertedZoneId !== currentRedZone.id) {
+        console.log('Triggering RedZone alert for zone:', currentRedZone);
+        // Store the ID of the alerted RedZone
+        localStorage.setItem('lastAlertedRedZoneId', currentRedZone.id);
+        
+        // Show the RedZone alert
+        showRedZoneAlert(currentRedZone, location);
+      } else {
+        console.log('Already alerted for this zone, skipping alert');
+      }
+    } else {
+      console.log('User is not inside any RedZone');
     }
-  }, [])
+  };
 
   const centerOnMyLocation = useCallback(() => {
     if (userLocation) {
@@ -485,28 +714,218 @@ function Map() {
     }
   }, [userLocation, enableLocation])
 
-  const checkCurrentStatus = (lat, lng) => {
-    // Calculate distance to nearest RedZone
-    let nearestDistance = Infinity
-    let nearestSeverity = 'safe'
+  // Function to find the nearest RedZone and its distance
+  const getNearestRedZoneInfo = (lat, lng) => {
+    if (!redZones || redZones.length === 0) {
+      return { distance: Infinity, zone: null };
+    }
+
+    let nearestDistance = Infinity;
+    let nearestZone = null;
 
     redZones.forEach(zone => {
-      const distance = calculateDistance(lat, lng, zone.position.lat, zone.position.lng)
+      const distance = calculateDistance(lat, lng, zone.position.lat, zone.position.lng);
       if (distance < nearestDistance) {
-        nearestDistance = distance
-        nearestSeverity = zone.severity
+        nearestDistance = distance;
+        nearestZone = zone;
       }
-    })
+    });
 
-    // Set status based on distance and severity
-    if (nearestDistance < 0.5) { // Within 0.5 km
-      setCurrentStatus(nearestSeverity === 'high' ? 'danger' : 'warning')
-    } else if (nearestDistance < 2) { // Within 2 km
-      setCurrentStatus('warning')
-    } else {
-      setCurrentStatus('safe')
+    return { distance: nearestDistance, zone: nearestZone };
+  };
+
+  // Function to show a prominent alert when entering a RedZone
+  const showRedZoneAlert = (redZone, location) => {
+    console.log('Showing RedZone alert for:', redZone);
+    
+    // Create alert container
+    const alertContainer = document.createElement('div');
+    alertContainer.id = 'redzone-alert';
+    alertContainer.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.9);
+      z-index: 10000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      backdrop-filter: blur(5px);
+    `;
+    
+    // Create alert content
+    const alertContent = document.createElement('div');
+    alertContent.style.cssText = `
+      background-color: #1a1a1a;
+      border: 3px solid ${getMarkerColor(redZone.severity)};
+      border-radius: 15px;
+      padding: 30px;
+      max-width: 90%;
+      width: 500px;
+      text-align: center;
+      box-shadow: 0 0 30px rgba(239, 68, 68, 0.5);
+      animation: pulse 2s infinite;
+    `;
+    
+    // Add pulse animation
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+        70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+      }
+    `;
+    document.head.appendChild(style);
+    
+    // Add alert content
+    alertContent.innerHTML = `
+      <h2 style="color: ${getMarkerColor(redZone.severity)}; margin-top: 0; font-size: 28px;">
+        ⚠️ DANGER WARNING ⚠️
+      </h2>
+      <h3 style="color: white; margin: 20px 0;">${redZone.name || redZone.title}</h3>
+      <p style="color: #ff6b6b; font-size: 18px; margin: 15px 0;">
+        You have entered a ${redZone.severity.toUpperCase()} risk area!
+      </p>
+      <div style="background-color: rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 15px; margin: 20px 0; text-align: left;">
+        <p style="color: white; margin: 5px 0;"><strong>Description:</strong> ${redZone.description}</p>
+        <p style="color: white; margin: 5px 0;"><strong>Severity:</strong> ${redZone.severity.toUpperCase()}</p>
+        <p style="color: white; margin: 5px 0;"><strong>Your Location:</strong> ${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}</p>
+        <p style="color: white; margin: 5px 0;"><strong>Reported:</strong> ${formatTimestamp(redZone.timestamp)}</p>
+      </div>
+      <p style="color: #f8f9fa; font-size: 16px; margin: 20px 0;">
+        Please take immediate precautions and leave this area if possible.
+      </p>
+      <button id="close-alert" style="
+        background-color: ${getMarkerColor(redZone.severity)};
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 15px 30px;
+        font-size: 18px;
+        font-weight: bold;
+        cursor: pointer;
+        margin-top: 20px;
+        transition: all 0.3s;
+      ">
+        ACKNOWLEDGE & CLOSE
+      </button>
+    `;
+    
+    // Add close functionality
+    alertContent.querySelector('#close-alert').addEventListener('click', () => {
+      console.log('Alert closed by user');
+      document.body.removeChild(alertContainer);
+      document.head.removeChild(style);
+    });
+    
+    // Add to DOM
+    alertContainer.appendChild(alertContent);
+    document.body.appendChild(alertContainer);
+    
+    // Try to vibrate the device
+    triggerVibration();
+    
+    // Play alert sound if possible
+    try {
+      console.log('Attempting to play alert sound...');
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      oscillator.type = 'sine';
+      oscillator.frequency.value = 800;
+      gainNode.gain.value = 0.3;
+      
+      oscillator.start();
+      
+      // Create a more attention-grabbing sound pattern
+      const now = audioContext.currentTime;
+      oscillator.frequency.setValueAtTime(800, now);
+      oscillator.frequency.setValueAtTime(1000, now + 0.1);
+      oscillator.frequency.setValueAtTime(800, now + 0.2);
+      oscillator.frequency.setValueAtTime(1000, now + 0.3);
+      
+      oscillator.stop(now + 0.5);
+      console.log('Alert sound played successfully');
+    } catch (e) {
+      console.log('Audio alert not supported:', e);
     }
-  }
+  };
+
+  // Function to trigger device vibration
+  const triggerVibration = () => {
+    console.log('Attempting to trigger vibration...');
+    
+    // Check if vibration API is supported
+    if ('vibrate' in navigator) {
+      console.log('Vibration API is supported');
+      
+      // Try different vibration patterns for maximum effect
+      try {
+        // Strong vibration pattern
+        const pattern = [
+          500, // vibrate for 500ms
+          200, // pause for 200ms
+          500, // vibrate for 500ms
+          200, // pause for 200ms
+          1000, // vibrate for 1000ms
+          200, // pause for 200ms
+          1000, // vibrate for 1000ms
+          200, // pause for 200ms
+          500, // vibrate for 500ms
+          200, // pause for 200ms
+          500  // vibrate for 500ms
+        ];
+        
+        console.log('Vibration pattern:', pattern);
+        navigator.vibrate(pattern);
+        console.log('Vibration triggered successfully');
+      } catch (e) {
+        console.log('Vibration not supported or blocked:', e);
+      }
+    } else {
+      console.log('Vibration API not supported');
+    }
+  };
+
+  // Function to check if user has entered a RedZone and trigger alert
+  const checkAndTriggerRedZoneAlert = useCallback((lat, lng, location) => {
+    // Get the current RedZone the user is in (if any)
+    let currentRedZone = null;
+    let currentRedZoneSeverity = 'low';
+    
+    redZones.forEach(zone => {
+      const distance = calculateDistance(lat, lng, zone.position.lat, zone.position.lng);
+      // RedZone radius is 200m = 0.2km
+      if (distance < 0.2) {
+        currentRedZone = zone;
+        // Use the highest severity if inside multiple zones
+        if (zone.severity === 'high' || (zone.severity === 'medium' && currentRedZoneSeverity !== 'high') || currentRedZoneSeverity === 'low') {
+          currentRedZoneSeverity = zone.severity;
+        }
+      }
+    });
+    
+    // Check if we have a RedZone and if it's different from the previously alerted one
+    if (currentRedZone) {
+      const previouslyAlertedZoneId = localStorage.getItem('lastAlertedRedZoneId');
+      
+      // Only trigger alert if it's a new RedZone or if enough time has passed (to avoid spam)
+      if (previouslyAlertedZoneId !== currentRedZone.id) {
+        // Store the ID of the alerted RedZone
+        localStorage.setItem('lastAlertedRedZoneId', currentRedZone.id);
+        
+        // Show the RedZone alert
+        showRedZoneAlert(currentRedZone, location);
+      }
+    }
+  }, [redZones]);
 
   const calculateDistance = (lat1, lng1, lat2, lng2) => {
     const R = 6371 // Earth's radius in km
@@ -567,6 +986,16 @@ function Map() {
     }
   }
 
+  // Function to manually test status calculation (for debugging)
+  const testStatusCalculation = () => {
+    if (userLocation) {
+      console.log('Testing status calculation for current location...');
+      checkCurrentStatus(userLocation.lat, userLocation.lng);
+    } else {
+      console.log('No user location available for status test');
+    }
+  };
+
   const mapCenter = useMemo(() => {
     return userLocation || MAP_CONFIG.defaultCenter
   }, [userLocation])
@@ -599,138 +1028,6 @@ function Map() {
         <div className="map-layout">
           {/* Main Map Area */}
           <div className="map-main">
-            <div className="map-controls">
-              {!locationEnabled && (
-                <div className="location-controls">
-                  <h3>📍 Enable Location Services</h3>
-                  <p>To see your current location and nearby RedZones, please enable location access.</p>
-                  
-                  {isMobile && (
-                    <div className="mobile-location-help">
-                      <h4>📱 Mobile Device Detected</h4>
-                      <div className="mobile-instructions">
-                        <p><strong>Before clicking "Enable Location":</strong></p>
-                        <ol>
-                          <li>Make sure <strong>GPS is ON</strong> in your phone settings</li>
-                          <li>Pull down Quick Settings → Turn ON <strong>Location/GPS</strong></li>
-                          <li>Go to <strong>Settings → Location → Turn ON</strong></li>
-                          <li>Go <strong>outside or near a window</strong> for better GPS signal</li>
-                        </ol>
-                        <p><small>💡 Tip: If GPS doesn't work, try using the "Manual Location" button below</small></p>
-                        
-                        {mobilePermissionStatus === 'denied' && (
-                          <div className="permission-denied-help">
-                            <p><strong>🚫 Location Permission Denied</strong></p>
-                            <button 
-                              onClick={requestMobilePermission} 
-                              className="btn btn-warning"
-                            >
-                              🔐 Request Permission Again
-                            </button>
-                          </div>
-                        )}
-                        
-                        {mobilePermissionStatus === 'prompt' && (
-                          <div className="permission-prompt-help">
-                            <p><strong>❓ Location Permission Not Set</strong></p>
-                            <button 
-                              onClick={requestMobilePermission} 
-                              className="btn btn-info"
-                            >
-                              🔐 Grant Location Permission
-                </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  
-                  <button 
-                    onClick={enableLocation} 
-                    className={`btn btn-primary ${locationLoading ? 'loading' : ''}`}
-                    disabled={locationLoading}
-                  >
-                    {locationLoading ? (
-                      <>Loading...</>
-                    ) : (
-                      <>
-                        📍 {isMobile ? 'Enable Mobile GPS' : 'Enable Location Services'}
-                      </>
-                    )}
-                  </button>
-                  
-                  <button 
-                    onClick={() => {
-                      const lat = prompt('Enter your latitude (e.g., 19.0769):')
-                      const lng = prompt('Enter your longitude (e.g., 83.7603):')
-                      if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
-                        const manualLocation = { lat: parseFloat(lat), lng: parseFloat(lng) }
-                        setUserLocation(manualLocation)
-                        setLocationEnabled(true)
-                        setShouldCenterOnUser(true)
-                        checkCurrentStatus(parseFloat(lat), parseFloat(lng))
-                        setError(null)
-                      }
-                    }} 
-                    className="btn btn-secondary"
-                  >
-                    🎯 Manual Location
-                  </button>
-                </div>
-              )}
-
-              {locationEnabled && (
-                <div className="location-controls">
-                <div className="location-status">
-                  <span className="location-indicator">📍</span>
-                    <span>Location Active</span>
-                    {locationAccuracy && (
-                      <span className="accuracy-info">
-                        (Accuracy: ±{Math.round(locationAccuracy)}m)
-                      </span>
-                    )}
-                  </div>
-                  <button onClick={centerOnMyLocation} className="btn btn-secondary">
-                    🎯 Center on My Location
-                  </button>
-                  
-                  <button 
-                    onClick={() => {
-                      console.log('🔄 Manually refreshing location...')
-                      setLocationLoading(true)
-                      // Force a completely fresh location reading
-                      navigator.geolocation.getCurrentPosition(
-                        (position) => {
-                          const { latitude, longitude, accuracy } = position.coords
-                          const newLocation = { lat: latitude, lng: longitude }
-                          setUserLocation(newLocation)
-                          setLocationAccuracy(accuracy)
-                          setShouldCenterOnUser(true)
-                          checkCurrentStatus(latitude, longitude)
-                          setLocationLoading(false)
-                          console.log('✅ Location refreshed manually:', newLocation)
-                        },
-                        (error) => {
-                          console.error('❌ Manual refresh failed:', error)
-                          setLocationLoading(false)
-                        },
-                        {
-                          enableHighAccuracy: true,
-                          timeout: 60000,        // 1 minute timeout
-                          maximumAge: 0,         // No caching at all
-                          forceRequest: true     // Force new request
-                        }
-                      )
-                    }} 
-                    className="btn btn-secondary"
-                    disabled={locationLoading}
-                  >
-                    {locationLoading ? '🔄 Refreshing...' : '🔄 Refresh Location'}
-                  </button>
-                </div>
-              )}
-            </div>
-
             <div className="map-area">
               {error ? (
                 <div className="map-error">
@@ -759,7 +1056,9 @@ function Map() {
                           setShouldCenterOnUser(true)
                           setError(null)
                           setLocationAccuracy(100) // Assume manual input has ~100m accuracy
-                          checkCurrentStatus(parseFloat(lat), parseFloat(lng))
+                          if (checkCurrentStatusRef.current) {
+                            checkCurrentStatusRef.current(parseFloat(lat), parseFloat(lng))
+                          }
                           console.log('📍 Manual location set:', manualLocation)
                         } else if (lat !== null && lng !== null) {
                           alert('Please enter valid coordinates (numbers only)')
@@ -798,17 +1097,22 @@ function Map() {
                     center={[mapCenter.lat, mapCenter.lng]}
                     zoom={mapZoom}
                     style={MAP_CONFIG.mapContainerStyle}
-                    maxBounds={[[MAP_CONFIG.maxBounds.southWest.lat, MAP_CONFIG.maxBounds.southWest.lng], [MAP_CONFIG.maxBounds.northEast.lat, MAP_CONFIG.maxBounds.northEast.lng]]}
-                    maxBoundsViscosity={1.0}
                     {...MAP_CONFIG.leafletOptions}
                     ref={mapRef}
                     whenReady={() => {
                       setMapLoading(false);
                     }}
                   >
+                    {/* Hybrid Map Layers - ESRI World Imagery with Labels */}
                     <TileLayer
-                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      attribution='&copy; <a href="https://www.esri.com/">Esri</a> | &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                      url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                      zIndex={1}
+                    />
+                    <TileLayer
+                      attribution='&copy; <a href="https://www.esri.com/">Esri</a>'
+                      url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+                      zIndex={2}
                     />
                     
                     <MapUpdater 
@@ -838,13 +1142,21 @@ function Map() {
                     )}
 
                     {/* RedZone Circles - Clean Implementation */}
-                    {redZones
-                      .filter(zone => zone.status === 'approved' && zone.position && zone.position.lat && zone.position.lng)
-                      .map((zone) => (
+                    {(() => {
+                      console.log('Rendering RedZones:', redZones);
+                      const filteredZones = redZones
+                        .filter(zone => zone.status === 'approved' && 
+                                       zone.position && 
+                                       typeof zone.position.lat === 'number' && 
+                                       typeof zone.position.lng === 'number' &&
+                                       !isNaN(zone.position.lat) && 
+                                       !isNaN(zone.position.lng));
+                      console.log('Filtered RedZones:', filteredZones);
+                      return filteredZones.map((zone) => (
                         <Circle
-                          key={zone.id}
+                          key={zone.id || `${zone.position.lat}-${zone.position.lng}`}
                           center={[zone.position.lat, zone.position.lng]}
-                          radius={500}
+                          radius={200} // Reduced from 500m to 200m
                           pathOptions={{
                             color: getCircleColor(zone.severity),
                             fillColor: getCircleColor(zone.severity),
@@ -854,20 +1166,10 @@ function Map() {
                         >
                           <Popup>
                             <div className="info-window">
-                              <h3>{zone.name}</h3>
-                              <p><strong>Severity:</strong> {zone.severity.toUpperCase()}</p>
-                              <p>{zone.description}</p>
-                              {zone.imageUrl && (
-                                <div className="redzone-image">
-                                  <img 
-                                    src={`${import.meta.env.VITE_API_URL || 'http://10.151.242.108:5004'}${zone.imageUrl}`} 
-                                    alt="RedZone" 
-                                    style={{ maxWidth: '100%', marginTop: '8px', marginBottom: '8px', borderRadius: '4px' }}
-                                    onClick={() => window.open(`${import.meta.env.VITE_API_URL || 'http://10.151.242.108:5004'}${zone.imageUrl}`, '_blank')}
-                                  />
-                                </div>
-                              )}
-                              <p><small>Reported: {formatTimestamp(zone.timestamp)}</small></p>
+                              <h3>{zone.name || 'Unnamed RedZone'}</h3>
+                              <p><strong>Severity:</strong> {(zone.severity || 'low').toUpperCase()}</p>
+                              <p>{zone.description || 'No description provided'}</p>
+                              <p><small>Reported: {zone.timestamp ? formatTimestamp(zone.timestamp) : 'Unknown'}</small></p>
                               {userLocation && (
                                 <p><small>Distance: {calculateDistance(
                                   userLocation.lat, 
@@ -883,13 +1185,13 @@ function Map() {
                                 borderRadius: '4px',
                                 fontSize: '0.9em'
                               }}>
-                                <strong>⚠️ Danger Zone:</strong> This red circle shows a 500m radius danger area around the reported incident.
+                                <strong>⚠️ Danger Zone:</strong> This red circle shows a 200m radius danger area around the reported incident. {/* Updated text */}
                               </div>
                             </div>
                           </Popup>
                         </Circle>
-                      ))
-                    }
+                      ));
+                    })()}
                   </MapContainer>
                 </>
               )}
@@ -907,39 +1209,36 @@ function Map() {
               </div>
               <p className="status-description">
                 {currentStatus === 'safe' && 'You are in a safe area'}
-                {currentStatus === 'warning' && 'Exercise caution in this area'}
-                {currentStatus === 'danger' && 'High-risk area detected. Stay alert!'}
+                {currentStatus === 'warning' && 'Warning: You are near or in a RedZone area!'}
+                {currentStatus === 'danger' && 'Danger: You are inside a high-risk RedZone!'}
               </p>
               {userLocation && (
                 <div className="location-info">
-                  <p><small>📍 Your exact coordinates:</small></p>
-                  <p><small>{userLocation.lat.toFixed(8)}, {userLocation.lng.toFixed(8)}</small></p>
-                  {locationAccuracy && (
-                    <p><small>📍 Accuracy: ±{Math.round(locationAccuracy)} meters</small></p>
-                  )}
-                  {locationAccuracy && locationAccuracy > 100 && (
-                    <p className="accuracy-warning">
-                      ⚠️ <small>Low accuracy location detected. This might be why your position appears incorrect. Try moving to an open area or refreshing location.</small>
-                    </p>
-                  )}
-                  <p><small>🕒 Last updated: {new Date().toLocaleTimeString()}</small></p>
-                  
-                  {/* Location Debug Panel */}
-                  <div className="location-debug">
-                    <details>
-                      <summary>🔍 Location Debug Info</summary>
-                      <div className="debug-details">
-                        <p><small><strong>Expected Location:</strong> 19.0769°N, 83.7603°E</small></p>
-                        <p><small><strong>Your Location:</strong> {userLocation.lat.toFixed(8)}°N, {userLocation.lng.toFixed(8)}°E</small></p>
-                        <p><small><strong>Difference:</strong> {Math.abs(userLocation.lat - 19.0769).toFixed(6)}° lat, {Math.abs(userLocation.lng - 83.7603).toFixed(6)}° lng</small></p>
-                        <p><small><strong>Distance from Expected:</strong> {calculateDistance(userLocation.lat, userLocation.lng, 19.0769, 83.7603).toFixed(2)} km</small></p>
-                        {locationAccuracy && (
-                          <p><small><strong>GPS Accuracy:</strong> ±{Math.round(locationAccuracy)}m ({locationAccuracy < 10 ? 'Excellent' : locationAccuracy < 50 ? 'Good' : locationAccuracy < 100 ? 'Fair' : 'Poor'})</small></p>
-                        )}
-                        <p><small><strong>Location Source:</strong> {locationAccuracy && locationAccuracy < 50 ? 'GPS (High Accuracy)' : 'Network/Approximate'}</small></p>
-                      </div>
-                    </details>
-                  </div>
+                  {(() => {
+                    const { distance: nearestDistance } = getNearestRedZoneInfo(userLocation.lat, userLocation.lng);
+                    // Count how many zones the user is inside
+                    let insideZones = 0;
+                    let highestSeverity = 'low';
+                    redZones.forEach(zone => {
+                      const distance = calculateDistance(userLocation.lat, userLocation.lng, zone.position.lat, zone.position.lng);
+                      if (distance < 0.2) {
+                        insideZones++;
+                        if (zone.severity === 'high' || (zone.severity === 'medium' && highestSeverity !== 'high')) {
+                          highestSeverity = zone.severity;
+                        }
+                      }
+                    });
+                    
+                    return (
+                      <>
+                        <p><small>📍 Your exact coordinates:</small></p>
+                        <p><small>{userLocation.lat.toFixed(8)}, {userLocation.lng.toFixed(8)}</small></p>
+                        <p><small>⚠️ Distance to nearest RedZone: {nearestDistance === Infinity ? 'No RedZones nearby' : `${nearestDistance.toFixed(2)} km`}</small></p>
+                        <p><small>🏠 Inside RedZones: {insideZones} ({highestSeverity})</small></p>
+                        <p><small>🕒 Last updated: {new Date().toLocaleTimeString()}</small></p>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
             </div>

@@ -1374,13 +1374,20 @@ export default function Admin({ onLogout }) {
                   center={[MAP_CONFIG.defaultCenter.lat, MAP_CONFIG.defaultCenter.lng]}
                   zoom={MAP_CONFIG.defaultZoom}
                   style={{ height: '100%', width: '100%' }}
-                  maxBounds={[[MAP_CONFIG.maxBounds.southWest.lat, MAP_CONFIG.maxBounds.southWest.lng], [MAP_CONFIG.maxBounds.northEast.lat, MAP_CONFIG.maxBounds.northEast.lng]]}
+                  maxBounds={undefined}
                   maxBoundsViscosity={1.0}
                   {...MAP_CONFIG.leafletOptions}
                 >
+                  {/* Hybrid Map Layers - ESRI World Imagery with Labels */}
                   <TileLayer
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    attribution='&copy; <a href="https://www.esri.com/">Esri</a> | &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                    url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                    zIndex={1}
+                  />
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.esri.com/">Esri</a>'
+                    url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+                    zIndex={2}
                   />
                   
                   <MapClickHandler />
@@ -1393,7 +1400,7 @@ export default function Admin({ onLogout }) {
                       <Circle
                         key={`${zone._id}-${index}`}
                         center={[zone.coordinates.lat, zone.coordinates.lng]}
-                        radius={500} // 500 meter radius
+                        radius={200} // Reduced from 500m to 200m to match user map
                         pathOptions={{
                           color: getCircleColor(zone.severity),
                           fillColor: getCircleColor(zone.severity),
@@ -1417,7 +1424,7 @@ export default function Admin({ onLogout }) {
                   {selectedCoords && (
                     <Circle
                       center={[selectedCoords.lat, selectedCoords.lng]}
-                      radius={500}
+                      radius={200} // Reduced from 500m to 200m to match user map
                       pathOptions={{
                         color: getCircleColor(newRedZone.severity),
                         fillColor: getCircleColor(newRedZone.severity),

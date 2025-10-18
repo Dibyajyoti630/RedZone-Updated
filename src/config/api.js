@@ -22,6 +22,7 @@ export const API_ENDPOINTS = {
   LOGIN: `${API_BASE_URL}/api/auth/login`,
   REGISTER: `${API_BASE_URL}/api/auth/register`,
   ME: `${API_BASE_URL}/api/auth/me`,
+  REFRESH_TOKEN: `${API_BASE_URL}/api/auth/refresh-token`,
   
   // Admin endpoints
   ADMIN_STATS: `${API_BASE_URL}/api/admin/stats`,
@@ -50,29 +51,80 @@ export const API_ENDPOINTS = {
   HEALTH: `${API_BASE_URL}/api/health`
 }
 
+// Function to refresh token
+const refreshToken = async () => {
+  try {
+    const token = localStorage.getItem('token')
+    if (!token) return null
+
+    const response = await fetch(API_ENDPOINTS.REFRESH_TOKEN, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    })
+
+    if (!response.ok) {
+      throw new Error('Failed to refresh token')
+    }
+
+    const data = await response.json()
+    localStorage.setItem('token', data.token)
+    return data.token
+  } catch (error) {
+    console.error('Token refresh error:', error)
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+    return null
+  }
+}
+
 // Helper function to make API calls
 export const apiCall = async (endpoint, options = {}) => {
   console.log('Making API call to:', endpoint)
-  const token = localStorage.getItem('token')
+  let token = localStorage.getItem('token')
   
-  const defaultOptions = {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token && { 'Authorization': `Bearer ${token}` }),
-      ...options.headers
+  const makeRequest = async (authToken) => {
+    const defaultOptions = {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken && { 'Authorization': `Bearer ${authToken}` }),
+        ...options.headers
+      }
     }
+
+    console.log('Request options:', {
+      method: options.method || 'GET',
+      headers: defaultOptions.headers,
+      body: options.body
+    })
+
+    return await fetch(endpoint, {
+      ...defaultOptions,
+      ...options
+    })
   }
 
-  console.log('Request options:', {
-    method: options.method || 'GET',
-    headers: defaultOptions.headers,
-    body: options.body
-  })
+  let response = await makeRequest(token)
 
-  const response = await fetch(endpoint, {
-    ...defaultOptions,
-    ...options
-  })
+  // If unauthorized due to expired token, try to refresh
+  if (response.status === 401) {
+    const errorData = await response.json().catch(() => ({}))
+    if (errorData.expired || (errorData.message && errorData.message.includes('expired'))) {
+      console.log('Token expired, attempting to refresh...')
+      const newToken = await refreshToken()
+      
+      if (newToken) {
+        // Retry the request with new token
+        response = await makeRequest(newToken)
+      } else {
+        // Redirect to login if refresh failed
+        window.location.href = '/login'
+        throw new Error('Session expired. Please log in again.')
+      }
+    }
+  }
 
   console.log('Response status:', response.status, response.statusText)
 

@@ -7,13 +7,9 @@ export const MAP_CONFIG = {
     lat: 19.054808571099415,  // Center between the two coordinates
     lng: 83.829417228698745   // Center between the two coordinates
   },
-  defaultZoom: 13,
-  userLocationZoom: 15,
-  // Map bounds to limit visible area between specified coordinates
-  maxBounds: {
-    northEast: { lat: 19.10624355377579, lng: 83.84362220764162 }, // North-East boundary
-    southWest: { lat: 19.00337359342304, lng: 83.81521224975587 }  // South-West boundary
-  },
+  defaultZoom: 14,  // Increased zoom level for better hybrid map viewing
+  userLocationZoom: 16,  // Increased zoom level for user location
+  // Removed map bounds to allow full map access
   mapContainerStyle: {
     width: '100%',
     height: '500px'
@@ -28,7 +24,7 @@ export const MAP_CONFIG = {
     keyboard: true,
     dragging: true,
     touchZoom: true,
-    minZoom: 12,
+    minZoom: 2,  // Allow zooming out to world view
     maxZoom: 18
   }
 }

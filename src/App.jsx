@@ -34,6 +34,33 @@ function AppContent() {
   const location = useLocation()
   const isAdminPage = location.pathname === '/admin'
 
+  // Function to refresh token
+  const refreshToken = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) return false
+
+      const response = await fetch(API_ENDPOINTS.REFRESH_TOKEN, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to refresh token')
+      }
+
+      const data = await response.json()
+      localStorage.setItem('token', data.token)
+      return true
+    } catch (error) {
+      console.error('Token refresh error:', error)
+      return false
+    }
+  }
+
   // Check for existing authentication on app load
   useEffect(() => {
     const checkAuth = async () => {
@@ -49,8 +76,30 @@ function AppContent() {
           setIsAdmin(data.user.role === 'admin')
         } catch (error) {
           console.error('Auth check error:', error)
-          localStorage.removeItem('token')
-          localStorage.removeItem('user')
+          
+          // If token expired, try to refresh it
+          if (error.message && error.message.includes('expired')) {
+            const refreshed = await refreshToken()
+            if (refreshed) {
+              try {
+                // Try to get user data again with new token
+                const data = await apiCall(API_ENDPOINTS.ME)
+                setUser(data.user)
+                setIsAuthenticated(true)
+                setIsAdmin(data.user.role === 'admin')
+              } catch (retryError) {
+                console.error('Retry auth check error:', retryError)
+                localStorage.removeItem('token')
+                localStorage.removeItem('user')
+              }
+            } else {
+              localStorage.removeItem('token')
+              localStorage.removeItem('user')
+            }
+          } else {
+            localStorage.removeItem('token')
+            localStorage.removeItem('user')
+          }
         }
       }
       setLoading(false)
@@ -162,5 +211,3 @@ function AppContent() {
 export default function App() {
   return <AppContent />
 }
-
-
