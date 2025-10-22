@@ -7,8 +7,8 @@ import User from '../models/User.js'
 import RedZone from '../models/RedZone.js'
 import RedZoneImage from '../models/RedZoneImage.js'
 import UserContact from '../models/UserContact.js'
-import { sendRedZoneNotification, sendSMS, testTwilioAccount } from '../utils/twilio.js'
-import { sendRedZoneEmailNotification, sendEmail, testEmailSending } from '../utils/email.js'
+import { sendRedZoneNotification, sendSMS, testTwilioAccount, sendUserRedZoneAlert } from '../utils/twilio.js'
+import { sendRedZoneEmailNotification, sendEmail, testEmailSending, sendUserRedZoneAlert as sendUserRedZoneAlertEmail } from '../utils/email.js'
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -298,7 +298,7 @@ router.post('/', auth, upload.single('image'), async (req, res) => {
     if (req.user.role === 'admin' && newRedZone.status === 'approved') {
       try {
         // Get all user contacts with phone numbers and emails
-        const userContacts = await UserContact.find({}, 'phone email')
+        const userContacts = await UserContact.find({}, 'phone email userId')
         
         if (userContacts && userContacts.length > 0) {
           // Extract phone numbers and emails from contacts
@@ -325,6 +325,50 @@ router.post('/', auth, upload.single('image'), async (req, res) => {
               .catch(err => {
                 console.error('Error sending email notifications:', err)
               })
+          }
+          
+          // Check if any users are in this redzone and send special notifications
+          if (newRedZone.coordinates && newRedZone.coordinates.lat && newRedZone.coordinates.lng) {
+            // Check all users to see if they're in this redzone
+            for (const contact of userContacts) {
+              try {
+                // Get user's last known location (this would need to be stored in the database)
+                // For now, we'll check if the hardcoded test location is in this redzone
+                const userLat = 19.04835900;
+                const userLng = 83.83171400;
+                
+                // Calculate distance between user and redzone center
+                const distance = calculateDistance(
+                  userLat, 
+                  userLng, 
+                  newRedZone.coordinates.lat, 
+                  newRedZone.coordinates.lng
+                );
+                
+                // If user is within 0.2km of redzone center
+                if (distance < 0.2) {
+                  console.log(`User ${contact.userId} is in the new redzone, sending special notifications...`);
+                  
+                  const userLocation = { lat: userLat, lng: userLng };
+                  
+                  // Send SMS notification if phone number exists
+                  if (contact.phone) {
+                    console.log('Sending special SMS notification to:', contact.phone);
+                    await sendUserRedZoneAlert(contact.phone, newRedZone, userLocation);
+                  }
+                  
+                  // Send email notification if email exists
+                  if (contact.email) {
+                    console.log('Sending special email notification to:', contact.email);
+                    await sendUserRedZoneAlertEmail(contact.email, newRedZone, userLocation);
+                  }
+                  
+                  // Note: For dashboard notification, the frontend will check periodically
+                }
+              } catch (userCheckError) {
+                console.error('Error checking user location for redzone:', userCheckError);
+              }
+            }
           }
         }
       } catch (notificationError) {
@@ -775,5 +819,103 @@ router.put('/:id/safe-now', auth, async (req, res) => {
     })
   }
 })
+
+// POST /api/redzones/check-user-location - Check if user is inside any redzone
+router.post('/check-user-location', auth, async (req, res) => {
+  try {
+    const { latitude, longitude } = req.body;
+    
+    // Validate input
+    if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+      return res.status(400).json({
+        success: false,
+        message: 'Latitude and longitude are required and must be numbers'
+      });
+    }
+    
+    // Find all approved redzones
+    const approvedRedZones = await RedZone.find({ status: 'approved' });
+    
+    // Check if user is inside any redzone (within 200m = 0.2km)
+    let userInRedZone = null;
+    let highestSeverity = 'low';
+    
+    for (const zone of approvedRedZones) {
+      // Skip zones without coordinates
+      if (!zone.coordinates || !zone.coordinates.lat || !zone.coordinates.lng) {
+        continue;
+      }
+      
+      // Calculate distance between user and redzone center
+      const distance = calculateDistance(latitude, longitude, zone.coordinates.lat, zone.coordinates.lng);
+      
+      // If user is within 0.2km of redzone center
+      if (distance < 0.2) {
+        // If this is the first redzone or has higher severity, update
+        if (!userInRedZone || 
+            (zone.severity === 'high') || 
+            (zone.severity === 'medium' && highestSeverity !== 'high') || 
+            (zone.severity === 'low' && highestSeverity === 'low')) {
+          userInRedZone = zone;
+          highestSeverity = zone.severity;
+        }
+      }
+    }
+    
+    // If user is in a redzone, send special notifications
+    if (userInRedZone) {
+      console.log('User is in redzone, sending special notifications...');
+      
+      // Get user contact information
+      const userContact = await UserContact.findOne({ userId: req.user.id });
+      
+      if (userContact) {
+        const userLocation = { lat: latitude, lng: longitude };
+        
+        // Send SMS notification if phone number exists
+        if (userContact.phone) {
+          console.log('Sending SMS notification to:', userContact.phone);
+          await sendUserRedZoneAlert(userContact.phone, userInRedZone, userLocation);
+        }
+        
+        // Send email notification if email exists
+        if (userContact.email) {
+          console.log('Sending email notification to:', userContact.email);
+          await sendUserRedZoneAlertEmail(userContact.email, userInRedZone, userLocation);
+        }
+      } else {
+        console.log('No user contact found for user ID:', req.user.id);
+      }
+    } else {
+      console.log('User is not in any redzone');
+    }
+    
+    res.json({
+      success: true,
+      inRedZone: !!userInRedZone,
+      redZone: userInRedZone,
+      severity: highestSeverity
+    });
+  } catch (error) {
+    console.error('Error checking user location:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to check user location'
+    });
+  }
+});
+
+// Helper function to calculate distance between two points (Haversine formula)
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
 
 export default router

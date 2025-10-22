@@ -585,7 +585,7 @@ export default function Admin({ onLogout }) {
       const formData = new FormData()
       formData.append('title', mapRedZone.title)
       formData.append('description', mapRedZone.description)
-      formData.append('location', `${selectedCoords.lat.toFixed(6)}, ${selectedCoords.lng.toFixed(6)}`)
+      formData.append('location', newRedZone.location || `${selectedCoords.lat.toFixed(6)}, ${selectedCoords.lng.toFixed(6)}`)
       formData.append('severity', newRedZone.severity) // Use main form severity instead of mapRedZone.severity
       formData.append('status', 'approved') // Admin-created zones are auto-approved
     
@@ -1413,7 +1413,9 @@ export default function Admin({ onLogout }) {
                             <h4>{zone.title}</h4>
                             <p><strong>Severity:</strong> {zone.severity}</p>
                             <p><strong>Description:</strong> {zone.description}</p>
-                            <p><strong>Coordinates:</strong> {zone.coordinates.lat.toFixed(6)}, {zone.coordinates.lng.toFixed(6)}</p>
+                            {zone.location && (
+                              <p><strong>Location:</strong> {zone.location}</p>
+                            )}
                           </div>
                         </Popup>
                       </Circle>
@@ -1479,7 +1481,7 @@ export default function Admin({ onLogout }) {
                         const formData = new FormData();
                         formData.append('title', newRedZone.title);
                         formData.append('description', newRedZone.description);
-                        formData.append('location', `${selectedCoords.lat.toFixed(6)}, ${selectedCoords.lng.toFixed(6)}`);
+                        formData.append('location', newRedZone.location || `${selectedCoords.lat.toFixed(6)}, ${selectedCoords.lng.toFixed(6)}`);
                         formData.append('severity', newRedZone.severity); // Use main form severity
                         formData.append('status', 'approved'); // Admin-created zones are auto-approved
                         

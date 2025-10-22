@@ -184,6 +184,38 @@ export const sendRedZoneNotification = async (phoneNumbers, redZone) => {
   }
 };
 
+/**
+ * Send special notification to user when they enter a redzone
+ * @param {string} phoneNumber - The user's phone number
+ * @param {Object} redZone - The RedZone object with details
+ * @param {Object} userLocation - The user's current location
+ * @returns {Promise} - Promise that resolves with message details or rejects with error
+ */
+export const sendUserRedZoneAlert = async (phoneNumber, redZone, userLocation) => {
+  try {
+    if (!phoneNumber || typeof phoneNumber !== 'string') {
+      throw new Error('Invalid phone number');
+    }
+
+    if (!redZone || !redZone.title || !redZone.location) {
+      throw new Error('Invalid RedZone data');
+    }
+
+    if (!userLocation || typeof userLocation.lat !== 'number' || typeof userLocation.lng !== 'number') {
+      throw new Error('Invalid user location');
+    }
+
+    // Create urgent alert message
+    const message = `🚨 URGENT ALERT: You have entered a ${redZone.severity.toUpperCase()} risk area "${redZone.title}" at ${redZone.location}. Please take immediate precautions and leave this area if possible. Your current location: ${userLocation.lat.toFixed(6)}, ${userLocation.lng.toFixed(6)}`;
+
+    // Send SMS
+    return await sendSMS(phoneNumber, message);
+  } catch (error) {
+    console.error('Error sending user RedZone alert:', error);
+    return null;
+  }
+};
+
 // Test function to verify Twilio account status
 export const testTwilioAccount = async () => {
   try {
@@ -217,5 +249,6 @@ export const testTwilioAccount = async () => {
 export default {
   sendSMS,
   sendRedZoneNotification,
+  sendUserRedZoneAlert,
   testTwilioAccount
 };

@@ -43,6 +43,7 @@ export const API_ENDPOINTS = {
   REDZONES_APPROVE: (id) => `${API_BASE_URL}/api/redzones/${id}/approve`,
   REDZONES_REJECT: (id) => `${API_BASE_URL}/api/redzones/${id}/reject`,
   REDZONES_SAFE_NOW: (id) => `${API_BASE_URL}/api/redzones/${id}/safe-now`,
+  REDZONES_CHECK_USER_LOCATION: `${API_BASE_URL}/api/redzones/check-user-location`,
   USER_CONTACT_REQUEST_REMOVAL: `${API_BASE_URL}/api/user-contacts/me/request-removal`,
   USER_CONTACT_NOTIFY: `${API_BASE_URL}/api/user-contacts/notify`,
   USER_CONTACT_ME: `${API_BASE_URL}/api/user-contacts/me`,

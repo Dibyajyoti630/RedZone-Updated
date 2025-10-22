@@ -270,6 +270,119 @@ export const sendRedZoneEmailNotification = async (emailAddresses, redZone, type
   }
 }
 
+/**
+ * Send special notification to user when they enter a redzone
+ * @param {string} emailAddress - The user's email address
+ * @param {Object} redZone - The RedZone object with details
+ * @param {Object} userLocation - The user's current location
+ * @returns {Promise} - Promise that resolves with message details or rejects with error
+ */
+export const sendUserRedZoneAlert = async (emailAddress, redZone, userLocation) => {
+  try {
+    if (!isEmailInitialized) {
+      console.warn('User RedZone alert not sent: SendGrid not initialized')
+      return null
+    }
+
+    if (!emailAddress || typeof emailAddress !== 'string' || !emailAddress.includes('@')) {
+      throw new Error('Invalid email address')
+    }
+
+    if (!redZone || !redZone.title || !redZone.location) {
+      throw new Error('Invalid RedZone data')
+    }
+
+    if (!userLocation || typeof userLocation.lat !== 'number' || typeof userLocation.lng !== 'number') {
+      throw new Error('Invalid user location')
+    }
+
+    // Create email subject
+    const subject = `🚨 URGENT ALERT: You've Entered a RedZone - ${redZone.title}`
+    
+    // Create HTML email content
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>URGENT ALERT: RedZone Detected</title>
+          <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background-color: #f8f9fa; }
+              .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
+              .header { background: linear-gradient(135deg, #e74c3c, #c0392b); color: white; padding: 24px; text-align: center; }
+              .title { font-size: 24px; font-weight: bold; margin: 0; }
+              .subtitle { font-size: 16px; margin: 8px 0 0; opacity: 0.9; }
+              .content { padding: 32px 24px; }
+              .alert-box { background: rgba(231, 76, 60, 0.1); border-left: 4px solid #e74c3c; padding: 16px; margin-bottom: 24px; border-radius: 4px; }
+              .location { font-size: 18px; font-weight: bold; color: #2c3e50; margin-bottom: 8px; }
+              .severity { display: inline-block; background: ${redZone.severity === 'high' ? '#e74c3c' : redZone.severity === 'medium' ? '#f39c12' : '#f1c40f'}; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
+              .description { font-size: 16px; line-height: 1.6; color: #34495e; margin: 16px 0; }
+              .user-location { background-color: #ecf0f1; padding: 15px; border-radius: 8px; margin: 20px 0; }
+              .footer { background: #2c3e50; color: white; padding: 24px; text-align: center; font-size: 14px; }
+              .timestamp { color: #7f8c8d; font-size: 12px; margin-top: 16px; }
+              @media (max-width: 600px) { .container { margin: 0; } .content { padding: 20px 16px; } }
+          </style>
+      </head>
+      <body>
+          <div class="container">
+              <div class="header">
+                  <h1 class="title">🚨 URGENT ALERT</h1>
+                  <p class="subtitle">RedZone Detected Near Your Location</p>
+              </div>
+              
+              <div class="content">
+                  <div class="alert-box">
+                      <div class="location">${redZone.title}</div>
+                      <div>
+                          <span class="severity">${redZone.severity} Risk</span>
+                      </div>
+                  </div>
+                  
+                  <p>Hello,</p>
+                  
+                  <p>We've detected that you've entered a <strong>${redZone.severity.toUpperCase()}</strong> risk area:</p>
+                  
+                  <div style="margin-bottom: 24px;">
+                      <strong>📍 RedZone Location:</strong> ${redZone.location}<br>
+                      ${redZone.landmark ? `<strong>🏛️ Landmark:</strong> ${redZone.landmark}<br>` : ''}
+                      <strong>⚠️ Your Current Location:</strong> ${userLocation.lat.toFixed(6)}, ${userLocation.lng.toFixed(6)}
+                  </div>
+                  
+                  <div class="description">
+                      <strong>📝 Description:</strong><br>
+                      ${redZone.description}
+                  </div>
+                  
+                  <div class="user-location">
+                      <strong>⚠️ Safety Recommendation:</strong><br>
+                      Please take immediate precautions and leave this area if possible. 
+                      Avoid this area until authorities declare it safe.
+                  </div>
+                  
+                  <div class="timestamp">
+                      Alert issued: ${new Date().toLocaleString()}
+                  </div>
+              </div>
+              
+              <div class="footer">
+                  <strong>RedZone</strong><br>
+                  Keeping communities safe through real-time alerts<br>
+                  <small>This is an automated safety notification. Stay vigilant and stay safe.</small>
+              </div>
+          </div>
+      </body>
+      </html>
+    `;
+
+    // Send email
+    return await sendEmail(emailAddress, subject, htmlContent);
+  } catch (error) {
+    console.error('Error sending user RedZone alert:', error);
+    return null;
+  }
+}
+
 // Test function to verify SendGrid integration
 export const testEmailSending = async (testEmail) => {
   try {
@@ -284,7 +397,7 @@ export const testEmailSending = async (testEmail) => {
       <p>This is a test email from RedZone Cursor application.</p>
       <p>If you received this email, the email notification system is working correctly.</p>
       <p>Timestamp: ${new Date().toLocaleString()}</p>
-    `
+    `;
 
     const result = await sendEmail(testEmail, testSubject, testContent)
     return !!result
@@ -297,5 +410,6 @@ export const testEmailSending = async (testEmail) => {
 export default {
   sendEmail,
   sendRedZoneEmailNotification,
+  sendUserRedZoneAlert,
   testEmailSending
 }

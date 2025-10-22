@@ -350,11 +350,11 @@ function Map() {
     const loadInitialData = async () => {
       try {
         // Set your specific location immediately
-        setUserLocation({ lat: 19.048359, lng: 83.831714 });
+        setUserLocation({ lat: 19.04835900, lng: 83.83171400 });
         setLocationEnabled(true);
         setShouldCenterOnUser(true);
         if (checkCurrentStatusRef.current) {
-          checkCurrentStatusRef.current(19.048359, 83.831714);
+          checkCurrentStatusRef.current(19.04835900, 83.83171400);
         }
         
         // Check geolocation support first
@@ -411,7 +411,7 @@ function Map() {
               
               // Re-check status after loading RedZones
               if (userLocation && checkCurrentStatusRef.current) {
-                checkCurrentStatusRef.current(userLocation.lat, userLocation.lng);
+                checkCurrentStatusRef.current(19.04835900, 83.83171400);
               }
             } else {
               console.log('Failed to fetch RedZones, setting empty array');
@@ -698,6 +698,9 @@ function Map() {
         
         // Show the RedZone alert
         showRedZoneAlert(currentRedZone, location);
+        
+        // Send special notifications
+        sendSpecialNotifications(currentRedZone, location);
       } else {
         console.log('Already alerted for this zone, skipping alert');
       }
@@ -737,6 +740,9 @@ function Map() {
   // Function to show a prominent alert when entering a RedZone
   const showRedZoneAlert = (redZone, location) => {
     console.log('Showing RedZone alert for:', redZone);
+    
+    // Send special notifications to the user
+    sendSpecialNotifications(redZone, location);
     
     // Create alert container
     const alertContainer = document.createElement('div');
@@ -858,6 +864,39 @@ function Map() {
     }
   };
 
+  // Function to send special SMS and email notifications when user enters a redzone
+  const sendSpecialNotifications = async (redZone, location) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.log('No token found, skipping notifications');
+        return;
+      }
+      
+      // Call the backend endpoint to trigger notifications
+      const response = await fetch(API_ENDPOINTS.REDZONES_CHECK_USER_LOCATION, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          latitude: location.lat,
+          longitude: location.lng
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Special notifications triggered:', data);
+      } else {
+        console.error('Failed to trigger special notifications:', response.status);
+      }
+    } catch (error) {
+      console.error('Error sending special notifications:', error);
+    }
+  };
+
   // Function to trigger device vibration
   const triggerVibration = () => {
     console.log('Attempting to trigger vibration...');
@@ -923,6 +962,9 @@ function Map() {
         
         // Show the RedZone alert
         showRedZoneAlert(currentRedZone, location);
+        
+        // Send special notifications to the user
+        sendSpecialNotifications(currentRedZone, location);
       }
     }
   }, [redZones]);
@@ -1169,15 +1211,10 @@ function Map() {
                               <h3>{zone.name || 'Unnamed RedZone'}</h3>
                               <p><strong>Severity:</strong> {(zone.severity || 'low').toUpperCase()}</p>
                               <p>{zone.description || 'No description provided'}</p>
-                              <p><small>Reported: {zone.timestamp ? formatTimestamp(zone.timestamp) : 'Unknown'}</small></p>
-                              {userLocation && (
-                                <p><small>Distance: {calculateDistance(
-                                  userLocation.lat, 
-                                  userLocation.lng, 
-                                  zone.position.lat, 
-                                  zone.position.lng
-                                ).toFixed(2)} km away</small></p>
+                              {zone.location && (
+                                <p><strong>Location:</strong> {zone.location}</p>
                               )}
+                              <p><small>Reported: {zone.timestamp ? formatTimestamp(zone.timestamp) : 'Unknown'}</small></p>
                               <div style={{ 
                                 marginTop: '10px', 
                                 padding: '8px', 

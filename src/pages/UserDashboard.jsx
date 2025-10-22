@@ -8,11 +8,183 @@ function UserDashboard({ user, onLogout }) {
   const [error, setError] = useState(null)
   const [contactExists, setContactExists] = useState(false)
   const [loadingContact, setLoadingContact] = useState(false)
+  const [userInRedZone, setUserInRedZone] = useState(false)
+  const [redZoneInfo, setRedZoneInfo] = useState(null)
+  const [alertShown, setAlertShown] = useState(false)
 
   useEffect(() => {
     fetchRecentRedZones()
     fetchUserContact()
+    checkUserRedZoneStatus()
+    
+    // Set up interval to periodically check user's redzone status
+    const interval = setInterval(() => {
+      checkUserRedZoneStatus()
+    }, 30000) // Check every 30 seconds
+    
+    return () => clearInterval(interval)
   }, [])
+
+  const checkUserRedZoneStatus = async () => {
+    try {
+      // Use the hardcoded test location
+      const latitude = 19.04835900
+      const longitude = 83.83171400
+      
+      // Check if user is inside any redzone
+      const token = localStorage.getItem('token')
+      const response = await fetch(API_ENDPOINTS.REDZONES_CHECK_USER_LOCATION, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ latitude, longitude })
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setUserInRedZone(data.inRedZone)
+        setRedZoneInfo(data.redZone)
+        
+        // If user is in a redzone and alert hasn't been shown yet, show it
+        if (data.inRedZone && data.redZone && !alertShown) {
+          setAlertShown(true)
+          showRedZoneAlert(data.redZone)
+          
+          // Reset alert shown after 5 minutes so it can be shown again if they're still in the zone
+          setTimeout(() => {
+            setAlertShown(false)
+          }, 300000) // 5 minutes
+        } else if (!data.inRedZone) {
+          // Reset alert shown when user is no longer in a redzone
+          setAlertShown(false)
+        }
+      }
+    } catch (error) {
+      console.error('Error checking user redzone status:', error)
+    }
+  }
+
+  // Function to show a prominent alert when entering a RedZone
+  const showRedZoneAlert = (redZone) => {
+    // Create alert container
+    const alertContainer = document.createElement('div')
+    alertContainer.id = 'redzone-alert-dashboard'
+    alertContainer.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.9);
+      z-index: 10000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      backdrop-filter: blur(5px);
+    `
+    
+    // Create alert content
+    const alertContent = document.createElement('div')
+    alertContent.style.cssText = `
+      background-color: #1a1a1a;
+      border: 3px solid ${redZone.severity === 'high' ? '#e74c3c' : redZone.severity === 'medium' ? '#f39c12' : '#f1c40f'};
+      border-radius: 15px;
+      padding: 30px;
+      max-width: 90%;
+      width: 500px;
+      text-align: center;
+      box-shadow: 0 0 30px rgba(239, 68, 68, 0.5);
+      animation: pulse 2s infinite;
+    `
+    
+    // Add pulse animation
+    const style = document.createElement('style')
+    style.textContent = `
+      @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+        70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+      }
+    `
+    document.head.appendChild(style)
+    
+    // Add alert content
+    alertContent.innerHTML = `
+      <h2 style="color: ${redZone.severity === 'high' ? '#e74c3c' : redZone.severity === 'medium' ? '#f39c12' : '#f1c40f'}; margin-top: 0; font-size: 28px;">
+        ⚠️ DANGER WARNING ⚠️
+      </h2>
+      <h3 style="color: white; margin: 20px 0;">${redZone.title}</h3>
+      <p style="color: #ff6b6b; font-size: 18px; margin: 15px 0;">
+        You have entered a ${redZone.severity.toUpperCase()} risk area!
+      </p>
+      <div style="background-color: rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 15px; margin: 20px 0; text-align: left;">
+        <p style="color: white; margin: 5px 0;"><strong>Description:</strong> ${redZone.description}</p>
+        <p style="color: white; margin: 5px 0;"><strong>Severity:</strong> ${redZone.severity.toUpperCase()}</p>
+        <p style="color: white; margin: 5px 0;"><strong>Location:</strong> ${redZone.location}</p>
+      </div>
+      <p style="color: #f8f9fa; font-size: 16px; margin: 20px 0;">
+        Please take immediate precautions and leave this area if possible.
+      </p>
+      <button id="close-alert-dashboard" style="
+        background-color: ${redZone.severity === 'high' ? '#e74c3c' : redZone.severity === 'medium' ? '#f39c12' : '#f1c40f'};
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 15px 30px;
+        font-size: 18px;
+        font-weight: bold;
+        cursor: pointer;
+        margin-top: 20px;
+        transition: all 0.3s;
+      ">
+        ACKNOWLEDGE & CLOSE
+      </button>
+    `
+    
+    // Add close functionality
+    alertContent.querySelector('#close-alert-dashboard').addEventListener('click', () => {
+      document.body.removeChild(alertContainer)
+      document.head.removeChild(style)
+    })
+    
+    // Add to DOM
+    alertContainer.appendChild(alertContent)
+    document.body.appendChild(alertContainer)
+    
+    // Try to vibrate the device
+    if ('vibrate' in navigator) {
+      navigator.vibrate([500, 200, 500, 200, 1000])
+    }
+    
+    // Play alert sound
+    try {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      oscillator.type = 'sine';
+      oscillator.frequency.value = 800;
+      gainNode.gain.value = 0.3;
+      
+      oscillator.start();
+      
+      // Create a more attention-grabbing sound pattern
+      const now = audioContext.currentTime;
+      oscillator.frequency.setValueAtTime(800, now);
+      oscillator.frequency.setValueAtTime(1000, now + 0.1);
+      oscillator.frequency.setValueAtTime(800, now + 0.2);
+      oscillator.frequency.setValueAtTime(1000, now + 0.3);
+      
+      oscillator.stop(now + 0.5);
+    } catch (e) {
+      console.log('Audio alert not supported');
+    }
+  }
 
   const fetchRecentRedZones = async () => {
     setLoading(true)
@@ -40,8 +212,6 @@ function UserDashboard({ user, onLogout }) {
     }
   }
 
-  // No longer needed as we'll use Link component directly
-
   const [showNotifyForm, setShowNotifyForm] = useState(false)
   const [notifyFormData, setNotifyFormData] = useState({
     phone: '',
@@ -53,21 +223,14 @@ function UserDashboard({ user, onLogout }) {
       setLoadingContact(true)
       const token = localStorage.getItem('token')
       
-      // Add better error handling and logging
-      console.log('Fetching user contact with token:', token ? 'Token present' : 'No token')
-      
       const response = await fetch(API_ENDPOINTS.USER_CONTACT_ME, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       })
       
-      console.log('User contact response:', response.status, response.statusText)
-      
-      // Handle both successful responses and 404 (which is expected when no contact exists)
       if (response.ok || response.status === 404) {
         const data = await response.json()
-        console.log('User contact data:', data)
         if (data.exists) {
           setContactExists(true)
           setNotifyFormData({
@@ -78,7 +241,6 @@ function UserDashboard({ user, onLogout }) {
           setContactExists(false)
         }
       } else {
-        console.error('Failed to fetch user contact:', response.status, await response.text())
         setContactExists(false)
       }
     } catch (error) {
@@ -111,7 +273,6 @@ function UserDashboard({ user, onLogout }) {
       
       if (response.ok) {
         alert('Your contact removal request has been submitted to admin for review. You will continue to receive notifications until approved.')
-        // Optionally refresh contact info to show new status
         fetchUserContact()
       } else {
         const errorData = await response.json()
@@ -126,15 +287,8 @@ function UserDashboard({ user, onLogout }) {
   const handleNotifyFormSubmit = async (e) => {
     e.preventDefault()
     try {
-      // Save to localStorage as backup
-      localStorage.setItem('notificationPreferences', JSON.stringify({
-        phone: notifyFormData.phone,
-        email: !!notifyFormData.email
-      }))
-      
       const token = localStorage.getItem('token')
       
-      // Send to new user-contacts endpoint
       const response = await fetch(API_ENDPOINTS.USER_CONTACT_NOTIFY, {
         method: 'POST',
         headers: {
@@ -149,17 +303,15 @@ function UserDashboard({ user, onLogout }) {
       
       if (response.ok) {
         const result = await response.json()
-        console.log('Contact information saved:', result)
         alert('Your contact information has been saved successfully!')
         setShowNotifyForm(false)
-        // Reset form
         setNotifyFormData({
           phone: '',
           email: ''
         })
+        fetchUserContact()
       } else {
         const errorData = await response.json()
-        console.error('Failed to save contact information:', errorData)
         alert('Failed to save contact information. ' + (errorData.message || 'Please try again.'))
       }
     } catch (error) {
@@ -178,6 +330,42 @@ function UserDashboard({ user, onLogout }) {
 
   return (
     <div className="dashboard-container">
+      {/* RedZone Alert Banner */}
+      {userInRedZone && redZoneInfo && (
+        <div className="redzone-alert-banner" style={{
+          backgroundColor: redZoneInfo.severity === 'high' ? '#e74c3c' : redZoneInfo.severity === 'medium' ? '#f39c12' : '#f1c40f',
+          color: 'white',
+          padding: '15px 20px',
+          textAlign: 'center',
+          fontWeight: 'bold',
+          position: 'relative',
+          animation: 'pulse 2s infinite'
+        }}>
+          <style>{`
+            @keyframes pulse {
+              0% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7); }
+              70% { box-shadow: 0 0 0 10px rgba(231, 76, 60, 0); }
+              100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); }
+            }
+          `}</style>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '24px' }}>⚠️</span>
+            <span>🚨 URGENT: You are currently in a {redZoneInfo.severity.toUpperCase()} risk area: {redZoneInfo.title}</span>
+            <Link to="/map" className="btn btn-secondary" style={{ 
+              marginLeft: '15px', 
+              backgroundColor: 'rgba(0,0,0,0.3)', 
+              border: '1px solid white',
+              color: 'white',
+              padding: '5px 10px',
+              textDecoration: 'none',
+              borderRadius: '4px'
+            }}>
+              View on Map
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Dashboard Header */}
       <div className="dashboard-header">
         <div className="dashboard-header-left">
