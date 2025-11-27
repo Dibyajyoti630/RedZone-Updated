@@ -155,7 +155,7 @@ const createEmailTemplate = (redZone, type = 'approved', serverUrl = 'http://loc
                         <div class="tip">⚠️ Avoid this area if possible</div>
                         <div class="tip">🚨 Follow instructions from local authorities</div>
                         <div class="tip">📱 Stay alert and informed about updates</div>
-                        <div class="tip">🚑 Contact emergency services if needed: 911</div>
+                        <div class="tip">🚑 Contact emergency services if needed: 100</div>
                     `}
                 </div>
                 
