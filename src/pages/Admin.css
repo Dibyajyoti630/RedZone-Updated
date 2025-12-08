@@ -1242,3 +1242,30 @@
     height: 50px;
   }
 }
+
+
+
+/* ===== Admin mobile: stacked cards for contacts & redzones ===== */
+.table-fixed { width:100%; border-collapse:collapse; table-layout:fixed; }
+.table-fixed th, .table-fixed td { padding:12px 14px; vertical-align:middle; border-bottom:1px solid rgba(255,255,255,0.03); }
+
+@media (max-width:820px) {
+  .contacts-table thead, .redzones-table thead, .table-fixed thead { display:none; }
+  .contacts-table tr, .redzones-table tr { display:block; width:100%; margin:12px 0; padding:12px; border-radius:12px; background:#0b0b0b; border:1px solid rgba(255,255,255,0.03); box-shadow:0 8px 22px rgba(0,0,0,0.6); }
+
+  .table-fixed td:first-child { display:block; font-weight:700; font-size:16px; margin-bottom:8px; color:#fff; text-align:left; white-space:normal; }
+  .table-fixed td:empty { display:none; }
+
+  .table-fixed td:not(:first-child) { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:8px 0; border-bottom:none; white-space:normal; }
+  .table-fixed td:not(:first-child)::before { content: attr(data-label); color:rgba(255,255,255,0.72); font-weight:700; width:42%; flex:0 0 42%; text-align:left; }
+  .table-fixed td:not(:first-child) > * { text-align:right; flex:1 1 auto; overflow-wrap:anywhere; }
+
+  .table-fixed img { width:84px; height:56px; object-fit:cover; border-radius:8px; margin-left:10px; }
+
+  .table-fixed td:last-child { justify-content:flex-end; }
+  .table-fixed .action-btn, .table-fixed .action-delete, .table-fixed .action-approve { padding:6px 8px; border-radius:8px; font-size:12px; margin-left:8px; }
+
+  .status-badge, .badge { padding:6px 10px; border-radius:999px; font-weight:700; font-size:11px; display:inline-block; }
+  .status-badge.pending { background:#1f6feb; color:#fff; }
+  .status-badge.high { background:#8b2b2b; color:#fff; }
+}
